@@ -1,0 +1,142 @@
+# Home-Buying Decision Dashboard
+
+A single-page decision tool that turns a home-buying question into a structured, source-cited answer. Built to demonstrate how I use AI as a research force multiplier — not as a decision-maker — for a real-world, high-stakes decision.
+
+**Live:** [spartanburg.pplx.app](https://spartanburg.pplx.app)
+
+---
+
+## Use case/user story: Why I built this
+
+Life is full of change and since I'm moving from North Carolina to the Spartanburg, SC area, my partner and I wanted to plan on buying a house within 1-2 years, maybe around Q2-Q3 2027 or 2028. Because I need data to make informed decisions, I needed a tool with the following requirements:
+
+1. Compare 10 submarkets on the same axes without opening 40 tabs.
+2. Keep every number created sourced.
+3. Separate empirical data from estimations.
+4. Challenge my intuition with an invalidation case, before committing to a sub market.
+
+Because I understand that Zillow, Redfin, and other websites optimize for engagement, I simply wanted to pull their data to make actionable **decisions**.
+
+---
+
+## UX/functionality: How to use
+
+Move the sliders. Every KPI recomputes live.
+
+- **Interactive map** — Spartanburg County + adjacent submarkets. Toggle layers for median price, work commute time isochrones (15/30/45 min), FEMA flood zones, school districts for long-term plans, grocery, hospital, highway-ramp POIs.
+- **Affordability engine** — PITI, front-end DTI, cash to close. Uses SC's 4% owner-occupied assessment ratio and Act 388 school-operating exemption.
+- **Rent versus buy breakeven points** — accounts for opportunity cost on the down payment. Sensitivity via appreciation and investment-return sliders.
+- **Submarket scorecard** — 10 submarkets scored on price, leverage, commute, safety, and fiber connectivity for my home needs. Reweight in the sidebar and watch the ranking change.
+- **Timing signals** — nine market watch-items with better/worse thresholds and links to their primary sources.
+- **Property scorer** — enter a hypothetical listing, get a 0–100 fit score against your hard rules and a red-flag checklist. Dysfunctionality will be improved later on since the ideal workflow for me is to Mark Holmes that I have favorited and then later will be pulled and scored in a spreadsheet style.
+- **Cash-flow runway** — This will determine whether or not we will hit our down payment using our financial data pulled from Monarch in our personal investment plan.
+
+Everything is a single `index.html` + `app.js` + `data.json`. No backend, build step, or dependencies beyond Leaflet and Chart.js from CDN.
+
+---
+
+## Rationality and Logic for the financial and logistical aspects behind this tool
+
+The dashboard respects the principal from a trading book: define invalidation before entry. Every submarket has a specific signal that would invalidate or prove that is a bad buy. The top 2 picks half conditions to determine whether or not to walk away. Secondly, there will be five decisions ordered based on their next steps, and not priority.
+
+Project management discipline informed me that, since buying a house is a one time high stakes deal the priority is selectivity structure, and risk management. Furthermore, since the transition from apartment to house is relatively easy, the transition from house to another house is a a lot less compelling due to the need to sell the house and plan a move with more items.
+
+---
+
+## Data Source
+
+Every number generated must have a pointer to an actual source, otherwise we will be making an uninformed decisions.
+
+| Layer | Source |
+|---|---|
+| ZIP-level median price, $/sqft, DoM, inventory | [Redfin Data Center](https://www.redfin.com/news/data-center/) (3-mo rolling ending 2026-05-31) |
+| Metro summary (months supply, inventory, YoY) | [Spartanburg Association of Realtors](https://scr.stats.showingtime.com/docs/mmi/x/MarketActivityfortheSpartanburgAssociationofREALTORS) |
+| 30-yr mortgage rate | [Freddie Mac PMMS](https://www.freddiemac.com/pmms) |
+| County population | [FRED SCSPAR0POP](https://fred.stlouisfed.org/data/SCSPAR0POP.txt) |
+| Residential permits | [FRED BPPRIV045083](https://fred.stlouisfed.org/data/BPPRIV045083.txt) |
+| SC insurance average | [LendingTree](https://www.lendingtree.com/insurance/state-of-home-insurance/) |
+| Tax mechanics (Act 388) | [SC DOR](https://dor.sc.gov/lgs/property-tax-basics) |
+| Property assessment / reappraisal | [Spartanburg County Auditor](https://www.spartanburgcounty.gov/171/Auditor) |
+| Flood zones | [FEMA NFHL](https://msc.fema.gov/portal/home) |
+| School district boundaries | [Census TIGERweb](https://tigerweb.geo.census.gov/) |
+| ZIP boundaries | [OpenDataDE SC ZCTAs](https://github.com/OpenDataDE/State-zip-code-GeoJSON) |
+| Drive-time routing | [OSRM public router](https://project-osrm.org/) |
+| POI (grocery, hospital, ramps) | [OpenStreetMap Overpass](https://overpass-api.de/) |
+| BMW employment | [BMW Press](https://www.press.bmwgroup.com/usa/) |
+| SC WARN filings | [SC Dept of Employment & Workforce](https://www.dew.sc.gov/) |
+
+Estimates (typical MPG, generic fiber coverage, forecast paths) are labeled inline to clarify that they are estimates.
+
+---
+
+## Leveraging AI and keeping my vision intact
+
+
+**How I setup my requirements:**
+- The constraints (commute anchor, HOA ceiling, fiber requirement, price target, 20 minute drive rule)
+- The framework (define invalidation, rank then invalidation criteria, decisions ordered stepwise)
+- determining what sources to trust and what submarkets to include.
+- the framing of the five decisions needed in the importance of challenging intuition, as to avoid a reliance on AI making decisions
+
+**What AI was best for:**
+- Pull primary source data across 10 submarkets in parallel
+- Compute commute time isochrones from an OSRM grid
+- Compile Redfin, crime, broadband, and routing data into a single normalized `data.json`
+- Write the HTML/JS scaffolding (I reviewed and edited)
+- Screenshot-test the layout at multiple viewports before publishing
+
+Setting constraints and making decisions keeps me in charge, while AI is best for pulling repetitive task, and human error probes task.
+
+---
+
+## Technical details
+
+- Single-file static site. Loads in under 1s over cable.
+- Leaflet 1.9.4 for the map, Chart.js 4.4.4 for the two charts. Both from CDN.
+- 297 KB `data.json` payload precompiled from the primary sources. Regenerated by `compile.py` when the underlying data refreshes.
+- Fontshare Satoshi + General Sans, inline SVG logo (though I wouldn't mind Helvetica Neue), dark-mode default with light-mode toggle.
+- Works offline once loaded (map tiles cache).
+
+---
+
+## how to translate into career and work
+
+My personality is defined as someone who thinks deeply about self improvement and constant optimization even for the mundane stuff in my life. How this applies to this tool is:
+
+1. Define what decision I need to make.
+2. Define the requirements, and explicit no go.
+3. Define how to retrieve data, and avoid secondhand errors due to being lost in translation (eg, using opinions or aggregated data)
+4. Normalizing data with every number value source sourced.
+5. Scoring candidates with adjustable weights.
+6. Having an invalidation criteria.
+7. Ordering next steps based on logical timeline
+
+That's a repeatable workflow for me, that is open to change, but has utility when it comes to things like:  vendor selection, tool choice, migration planning, or any decision where there is a high noise to signal ratio.
+
+## To Do
+1. Amortization calculator
+2.  Actual pipeline with normalized data storage on repo
+3. Regenerating nightly data in data/parcels.parquet with Github actions. county REST service, return tax pin, assessed value, tax district, school attendance zone, and last sale
+4. Scenario Solver where I can input down payment, rate, insurance, HOA, fees and shows me monthly PITI plus max price which PITI stays under a % of income
+5. rate sensitivity band that plot at the same houses with 5.0% to 7.5% with 30 year at 6.5% that includes  oscillation within a few base points weekly, defining the payment delta to inform buy or wait decision
+6. Watcher to push notifications
+7. Natural language evaluation to query on tool
+8. Market velocity
+9. open API for spartanburg area GIS, that includes parcels, assessed values, service districts, and voting/school boundaries
+10. FRED  MORTGAGE30US , the Freddie Mac 30-year average, weekly each Thursday, free API key
+11. tax benefit: SC applies a 4% assessment ratio to owner-occupied legal residences versus 6% for everything else, and the legal-residence exemption also removes school operating millage
+
+
+
+
+---
+
+## License
+
+MIT License, feel free to adapt to your needs. Message me if you'd like help and if you build something on top of it, I'd love to see!
+
+---
+
+## Not financial advice
+
+This is a personal decision-support tool built as a portfolio piece. Every value on the page is real and cited, but nothing on this dashboard is investment advice or a recommendation to buy or sell real estate. Verify every estimate on a specific TMS or address before you commit capital.
