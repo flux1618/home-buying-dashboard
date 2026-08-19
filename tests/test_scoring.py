@@ -213,8 +213,10 @@ class TestDeductions:
         assert r.value == 0
 
     def test_unknown_optional_field_is_not_a_deduction(self, profile):
-        """Missing sqft is unknown, not "small"."""
-        assert scoring.score(clean(sqft=None), profile, 2026).value == 100
+        """Missing sqft is unknown, not "small" — no deduction is recorded for it."""
+        r = scoring.score(clean(sqft=None), profile, 2026)
+        assert r.total_deducted == 0
+        assert not any(d["rule"] == "sqft_under" for d in r.deductions)
 
     def test_unknown_fiber_does_not_deduct(self, profile):
         r = scoring.score(clean(fiber_available=None), profile, 2026)
@@ -223,6 +225,65 @@ class TestDeductions:
     def test_every_deduction_names_its_rule(self, profile):
         r = scoring.score(clean(sqft=1200, baths=2), profile, 2026)
         assert all(d["rule"] and d["reason"] for d in r.deductions)
+
+
+class TestUnknownFactsCap:
+    """Absence of evidence must not read as evidence of quality.
+
+    Batch mode surfaced this: two properties with no county record at all scored a
+    perfect 100 and outranked the one house we had full data on, because every
+    deduction is guarded by `is not None` and none of them fired.
+    """
+
+    def test_fully_known_property_can_still_reach_take(self, profile):
+        r = scoring.score(clean(), profile, 2026)
+        assert r.unknown_facts == []
+        assert r.score_capped is False
+        assert r.value == 100
+        assert r.verdict == "TAKE"
+
+    @pytest.mark.parametrize(
+        "field,label",
+        [
+            ("sqft", "heated square footage"),
+            ("beds", "bedroom count"),
+            ("baths", "bathroom count"),
+        ],
+    )
+    def test_any_missing_physical_fact_blocks_take(self, profile, field, label):
+        r = scoring.score(clean(**{field: None}), profile, 2026)
+        assert r.unknown_facts == [label]
+        assert r.score_capped is True
+        assert r.value == profile.verdict_take_min - 1
+        assert r.verdict == "WATCH"
+
+    def test_no_facts_at_all_does_not_score_100(self, profile):
+        """The exact regression: an empty county record used to look perfect."""
+        r = scoring.score(clean(sqft=None, beds=None, baths=None), profile, 2026)
+        assert r.value < 100
+        assert r.verdict != "TAKE"
+        assert len(r.unknown_facts) == 3
+
+    def test_cap_is_one_directional(self, profile):
+        """A property already below the cap keeps its own worse score."""
+        r = scoring.score(clean(sqft=None, beds=1, hoa_monthly=400.0), profile, 2026)
+        assert r.value < profile.verdict_take_min - 1
+        assert r.score_capped is False
+
+    def test_known_property_outranks_unknown_one(self, profile):
+        """The ranking property that actually matters for a shortlist."""
+        known = scoring.score(clean(baths=2), profile, 2026)
+        unknown = scoring.score(clean(sqft=None, beds=None, baths=None), profile, 2026)
+        assert known.value > unknown.value
+
+    def test_cap_explains_itself_in_a_caveat(self, profile):
+        r = scoring.score(clean(sqft=None), profile, 2026)
+        assert any("capped" in c for c in r.caveats)
+
+    def test_cap_is_reported_in_the_document(self, profile):
+        d = scoring.score(clean(beds=None), profile, 2026).to_dict()
+        assert d["score_capped"] is True
+        assert d["unknown_facts"] == ["bedroom count"]
 
 
 class TestVerdictBands:

@@ -66,6 +66,8 @@ class ScoreResult:
     capital_expenses: list[CapitalExpense] = field(default_factory=list)
     caveats: list[str] = field(default_factory=list)
     score_pinned: bool = False
+    unknown_facts: list[str] = field(default_factory=list)
+    score_capped: bool = False
 
     @property
     def total_deducted(self) -> int:
@@ -89,6 +91,8 @@ class ScoreResult:
             "value": self.value,
             "verdict": self.verdict,
             "score_pinned": self.score_pinned,
+            "score_capped": self.score_capped,
+            "unknown_facts": self.unknown_facts,
             "hard_fails": self.hard_fails,
             "unevaluated_hard_fails": self.unevaluated_hard_fails,
             "deductions": self.deductions,
@@ -200,6 +204,25 @@ def score(facts: PropertyFacts, profile: BuyerProfile, current_year: int) -> Sco
     total = result.total_deducted + result.capex_deducted
     result.value = max(0, min(100, 100 - total))
 
+    # -- what we do not know -------------------------------------------------
+    # Every deduction above is guarded by `is not None`, which is correct — you cannot
+    # deduct for a small house without knowing its size. The side effect is that a
+    # property with *no* physical facts collects no deductions and scores 100.
+    #
+    # Batch mode made that visible immediately: two properties whose size, bedroom count,
+    # and bathroom count were all unknown ranked above the one house with a full county
+    # record, purely because the record was missing. Silence read as perfection.
+    #
+    # So absence of evidence is now tracked explicitly and gates the verdict below.
+
+    for value, label in (
+        (facts.sqft, "heated square footage"),
+        (facts.beds, "bedroom count"),
+        (facts.baths, "bathroom count"),
+    ):
+        if value is None:
+            result.unknown_facts.append(label)
+
     # -- verdict -------------------------------------------------------------
 
     # An unverified hard fail pins the score rather than letting it stand. Pinning is
@@ -208,6 +231,16 @@ def score(facts: PropertyFacts, profile: BuyerProfile, current_year: int) -> Sco
     if result.unevaluated_hard_fails:
         result.value = min(result.value, profile.unevaluated_score)
         result.score_pinned = True
+
+    # The same principle applied to physical facts. TAKE means "worth writing an offer",
+    # and that claim cannot be made about a house whose size is unknown. The cap lands it
+    # in WATCH — go find the missing number, then re-score. One-directional as well, so a
+    # property already scoring below the cap keeps its own lower score.
+    if result.unknown_facts:
+        cap = profile.verdict_take_min - 1
+        if result.value > cap:
+            result.value = cap
+            result.score_capped = True
 
     if result.value >= profile.verdict_take_min:
         result.verdict = VERDICT_TAKE
@@ -232,6 +265,20 @@ def _add_caveats(
     current_year: int,
 ) -> None:
     """Flags that inform but never deduct."""
+    if result.score_capped:
+        result.caveats.append(
+            f"Score capped at {profile.verdict_take_min - 1} because "
+            f"{', '.join(result.unknown_facts)} "
+            f"{'is' if len(result.unknown_facts) == 1 else 'are'} unknown. "
+            f"A house cannot be a TAKE on facts nobody has confirmed — the missing "
+            f"deductions may simply not have been applied yet. Fill these in and re-score."
+        )
+    elif result.unknown_facts:
+        result.caveats.append(
+            f"{', '.join(result.unknown_facts).capitalize()} unknown, so any related "
+            f"deduction is unapplied rather than passed."
+        )
+
     if facts.year_built and facts.year_built < profile.preferred_year_built_min:
         result.caveats.append(
             f"Built {facts.year_built}, before {profile.preferred_year_built_min} — "
