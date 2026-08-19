@@ -28,7 +28,7 @@ Move the sliders. Every KPI recomputes live.
 - **Rent versus buy breakeven points** — accounts for opportunity cost on the down payment. Sensitivity via appreciation and investment-return sliders.
 - **Submarket scorecard** — 10 submarkets scored on price, leverage, commute, safety, and fiber connectivity for my home needs. Reweight in the sidebar and watch the ranking change.
 - **Timing signals** — nine market watch-items with better/worse thresholds and links to their primary sources.
-- **Property scorer** — enter a hypothetical listing, get a 0–100 fit score against your hard rules and a red-flag checklist. Dysfunctionality will be improved later on since the ideal workflow for me is to Mark Holmes that I have favorited and then later will be pulled and scored in a spreadsheet style.
+- **Property scorer** — enter a hypothetical listing, get a 0–100 fit score against your hard rules and a red-flag checklist. Functionality will be improved later on since the ideal workflow for me is to mark MLS homes that I have favorited and then later will be pulled and scored in a spreadsheet style.
 - **Cash-flow runway** — This will determine whether or not we will hit our down payment using our financial data pulled from Monarch in our personal investment plan.
 
 Everything is a single `index.html` + `app.js` + `data.json`. No backend, build step, or dependencies beyond Leaflet and Chart.js from CDN.
@@ -37,15 +37,15 @@ Everything is a single `index.html` + `app.js` + `data.json`. No backend, build 
 
 ## Rationality and Logic for the financial and logistical aspects behind this tool
 
-The dashboard respects the principal from a trading book: define invalidation before entry. Every submarket has a specific signal that would invalidate or prove that is a bad buy. The top 2 picks half conditions to determine whether or not to walk away. Secondly, there will be five decisions ordered based on their next steps, and not priority.
+The dashboard respects the principle from a trading book: define invalidation before entry. Every submarket has a specific signal that would invalidate or prove that is a bad buy. The top 2 picks have conditions to determine whether or not to walk away. Secondly, there will be five decisions ordered based on their next steps, and not priority.
 
-Project management discipline informed me that, since buying a house is a one time high stakes deal the priority is selectivity structure, and risk management. Furthermore, since the transition from apartment to house is relatively easy, the transition from house to another house is a a lot less compelling due to the need to sell the house and plan a move with more items.
+Project management discipline informed me that, since buying a house is a one-time, high-stakes deal the priority is selectivity structure, and risk management. Furthermore, since the transition from apartment to house is relatively easy, the transition from house to another house is a lot less compelling due to the need to sell the house and plan a move with more items.
 
 ---
 
 ## Data Source
 
-Every number generated must have a pointer to an actual source, otherwise we will be making an uninformed decisions.
+Every number generated must have a pointer to an actual source, otherwise we will be making uninformed decisions.
 
 | Layer | Source |
 |---|---|
@@ -65,7 +65,7 @@ Every number generated must have a pointer to an actual source, otherwise we wil
 | BMW employment | [BMW Press](https://www.press.bmwgroup.com/usa/) |
 | SC WARN filings | [SC Dept of Employment & Workforce](https://www.dew.sc.gov/) |
 
-Estimates (typical MPG, generic fiber coverage, forecast paths) are labeled inline to clarify that they are estimates.
+Estimates (typical millage, generic fiber coverage, forecast paths) are labeled inline to clarify that they are estimates.
 
 ---
 
@@ -85,7 +85,7 @@ Estimates (typical MPG, generic fiber coverage, forecast paths) are labeled inli
 - Write the HTML/JS scaffolding (I reviewed and edited)
 - Screenshot-test the layout at multiple viewports before publishing
 
-Setting constraints and making decisions keeps me in charge, while AI is best for pulling repetitive task, and human error probes task.
+Setting constraints and making decisions keeps me in charge, while AI is best for pulling repetitive tasks, and human-error-prone tasks.
 
 ---
 
