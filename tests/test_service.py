@@ -23,6 +23,7 @@ fastapi = pytest.importorskip(
 )
 from fastapi.testclient import TestClient  # noqa: E402
 
+from analyzer.core.profile import load_profile  # noqa: E402
 from analyzer.pipeline import Degradation, PipelineAborted, PipelineRun  # noqa: E402
 
 
@@ -341,3 +342,106 @@ def test_analyzer_never_imports_the_service_layer():
                 if name.split(".")[0] in {"service", "fastapi", "uvicorn", "pydantic"}:
                     offenders[str(module.relative_to(root))] = name
     assert not offenders, f"analyzer imports the web layer: {offenders}"
+
+
+# =============================================================================
+# One engine, three doors
+# =============================================================================
+
+
+class TestDoorsAgree:
+    """The CLI, the batch runner, and the service must not drift apart.
+
+    ADR 0007 refactored the batch runner so the file-based helpers became thin wrappers
+    over shared text/stream functions, precisely so the API could reuse them instead of
+    growing a parallel implementation. The risk that refactor creates is subtle: someone
+    later finds a shared signature inconvenient, writes a local variant in one adapter,
+    and now two doors format or parse the same input differently.
+
+    That drift is invisible in output review, because each door looks correct on its own.
+    These tests are the check, and they compare byte-for-byte against the on-disk artifacts
+    the CLI produces rather than re-deriving the expected text here — a hand-written
+    expectation would just be a third implementation to keep in sync.
+    """
+
+    SHORTLIST = "address,price,hoa_monthly\n1 A St,268000,0\n2 B St,310000,\n"
+
+    def _batch_result(self, monkeypatch):
+        from analyzer import batch as batch_module
+
+        def stub(address, price, **kwargs):
+            return PipelineRun(
+                document=fake_document(),
+                degradations=[Degradation(station="broadband", reason="no api key")],
+                stations_run=["geocode", "parcel", "flood", "commute", "broadband"],
+            )
+
+        rows, rejected, unknown = batch_module.parse_shortlist_text(self.SHORTLIST)
+        profile = load_profile()
+        entries = batch_module.analyse_shortlist(rows, profile=profile, runner=stub)
+        return batch_module.BatchResult(
+            entries=entries,
+            rejected=rejected,
+            unknown_headers=unknown,
+            profile_name=profile.name,
+        )
+
+    def test_csv_body_is_byte_identical_to_the_cli_file(self, client, monkeypatch, tmp_path):
+        from analyzer import batch as batch_module
+
+        result = self._batch_result(monkeypatch)
+        on_disk = tmp_path / "summary.csv"
+        batch_module.write_summary_csv(result, on_disk)
+
+        response = client.post(
+            "/shortlist?format=csv",
+            files={"file": ("s.csv", io.BytesIO(self.SHORTLIST.encode()), "text/csv")},
+        )
+        assert response.status_code == 200
+        # newline handling is the classic place these two paths diverge, hence splitlines
+        assert response.text.splitlines() == on_disk.read_text().splitlines()
+
+    def test_markdown_body_is_identical_to_the_cli_file(self, client, monkeypatch, tmp_path):
+        from analyzer import batch as batch_module
+
+        result = self._batch_result(monkeypatch)
+        on_disk = tmp_path / "shortlist.md"
+        batch_module.write_markdown(result, on_disk)
+
+        response = client.post(
+            "/shortlist?format=markdown",
+            files={"file": ("s.csv", io.BytesIO(self.SHORTLIST.encode()), "text/csv")},
+        )
+        assert response.status_code == 200
+        assert response.text.splitlines() == on_disk.read_text().splitlines()
+
+    def test_upload_and_file_parse_to_the_same_rows(self, client, tmp_path):
+        """An uploaded shortlist and the same bytes on disk must parse identically.
+
+        Including the rejections: a row the CLI rejects must not be quietly accepted over
+        HTTP, which is how a batch run would end up analysing a row the CLI refused.
+        """
+        from analyzer import batch as batch_module
+
+        path = tmp_path / "s.csv"
+        path.write_text(self.SHORTLIST)
+        from_file, rejected_file, _ = batch_module.read_shortlist(path)
+        from_text, rejected_text, _ = batch_module.parse_shortlist_text(self.SHORTLIST)
+
+        assert [r.address for r in from_file] == [r.address for r in from_text]
+        assert [r.price for r in from_file] == [r.price for r in from_text]
+        assert [r.hoa_monthly for r in from_file] == [r.hoa_monthly for r in from_text]
+        assert len(rejected_file) == len(rejected_text)
+
+    def test_explicit_zero_hoa_survives_both_doors(self, client):
+        """Regression: `0` in an HOA column was once rejected as "must be positive".
+
+        Zero dues is a real, common, and materially good fact about a property — not a
+        missing value. It has to mean the same thing whether it arrives by file or upload.
+        """
+        response = client.post(
+            "/shortlist?dry_run=true",
+            files={"file": ("s.csv", io.BytesIO(self.SHORTLIST.encode()), "text/csv")},
+        )
+        assert response.status_code == 200
+        assert response.json()["rejected"] == []

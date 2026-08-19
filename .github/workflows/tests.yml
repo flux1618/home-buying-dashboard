@@ -1,0 +1,210 @@
+# The gate on every push: everything that can be verified without depending on someone
+# else's server being up.
+#
+# The split is deliberate and it is the whole point of the CI design. This workflow must
+# be *boring* — if it ever fails because Spartanburg County had a bad afternoon, people
+# learn to ignore red builds, and then it stops protecting anything. Contract checks
+# against live endpoints live in live.yml on a schedule, where a failure means "a source
+# changed, go look" rather than "your commit is broken".
+
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# A force-push or a quick follow-up commit should cancel the previous run rather than
+# queue behind it. Nothing here is worth paying for twice.
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  offline:
+    name: offline suite (py${{ matrix.python }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # 3.11 is the floor because the core reads TOML with stdlib tomllib. Testing the
+        # floor and a current release catches the two failures that actually happen:
+        # using a syntax the floor does not have, and a deprecation in a newer runtime.
+        python: ["3.11", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Install with API and dev extras
+        run: |
+          python -m pip install --upgrade pip
+          pip install '.[api,dev]'
+
+      - name: Run the offline suite
+        # No -m flag needed: pyproject already sets `-m 'not live'` in addopts, so the
+        # default run is offline by construction rather than by remembering a flag.
+        run: pytest -v
+
+  core-is-still-pure:
+    name: core runs on a stdlib-only interpreter
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install with no extras at all
+        # The import-ban test in test_core_purity.py reads source with ast and would pass
+        # even if a dependency had quietly become load-bearing. This job proves the
+        # stronger claim by executing a full analysis in an environment where fastapi,
+        # pydantic, and httpx do not exist. ADR 0002 stops being a promise and becomes
+        # a property of the build.
+        run: pip install .
+
+      - name: Score a property with nothing installed but the standard library
+        env:
+          # Point at the rulebook explicitly. Without this the run is ambiguous: the
+          # working directory is the checkout, so `import analyzer` could resolve to the
+          # local source tree instead of the installed package and the job would quietly
+          # stop testing what it claims to test.
+          HBA_PROFILE: ${{ github.workspace }}/buyer_profile.toml
+        run: |
+          cd "$RUNNER_TEMP"      # out of the checkout, so the installed package is used
+          python - <<'PY'
+          from datetime import date
+          from analyzer.core.analyze import analyze
+          from analyzer.core.profile import load_profile
+          from analyzer.core.scoring import PropertyFacts
+
+          # Only the extras this project could plausibly grow a dependency on. Checking
+          # for something like `requests` would risk a spurious failure if a runner image
+          # ships it preinstalled, and a red build for a reason unrelated to the code is
+          # how a test suite loses its credibility.
+          for name in ("fastapi", "pydantic", "httpx", "uvicorn"):
+              try:
+                  __import__(name)
+              except ImportError:
+                  continue
+              raise SystemExit(f"{name} is importable — this job no longer proves anything")
+
+          doc = analyze(
+              PropertyFacts(price=300_000, sqft=1600, beds=3, baths=3, garage_spaces=2,
+                            year_built=2015, flood_zone="X", water_sewer="public",
+                            commute_min=15.0, fiber_available=True),
+              load_profile(),
+              date.today().year,
+              address="ci smoke test",
+          )
+          assert doc["score"]["verdict"] == "TAKE", doc["score"]
+          print("stdlib-only analysis OK:", doc["score"]["verdict"], doc["score"]["value"])
+          PY
+
+  cli-and-batch:
+    name: CLI and batch run offline
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - run: pip install '.[dev]'
+
+      - name: Batch dry run validates the example shortlist
+        # A dry run makes no requests, so this is safe in CI and it catches the class of
+        # break that unit tests miss: an entry point that no longer starts, or an example
+        # file that drifted out of sync with the parser.
+        run: python -m analyzer.batch examples/shortlist.csv --dry-run
+
+      - name: A malformed shortlist fails loudly rather than half-running
+        run: |
+          printf 'address,beds\n1 Main St,3\n' > /tmp/bad.csv
+          if python -m analyzer.batch /tmp/bad.csv --dry-run; then
+            echo "expected a non-zero exit for a missing required column"
+            exit 1
+          fi
+
+      - name: A rejected row makes the dry run exit non-zero
+        # Matters for scheduling. A cron job must not quietly analyse nine rows of a
+        # ten-row shortlist and report success.
+        run: |
+          printf 'address,price\n1 Main St,268000\n,300000\n' > /tmp/partial.csv
+          if python -m analyzer.batch /tmp/partial.csv --dry-run; then
+            echo "expected a non-zero exit when rows were rejected"
+            exit 1
+          fi
+
+  container:
+    name: container builds for amd64 and arm64
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build both architectures
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Load the amd64 image so it can actually be started
+        # The multi-arch build above proves it compiles. It cannot prove it runs, because
+        # a manifest list is not loadable into the local daemon. This single-arch build
+        # reuses the same cache and gives us something to boot.
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64
+          push: false
+          load: true
+          tags: home-buying-analyzer:ci
+          cache-from: type=gha
+
+      - name: Smoke test the running container
+        # This is the step that would have caught the real bug found while building this:
+        # load_profile() resolves relative to its own file, which lands in site-packages
+        # once installed, so the container started and then failed on first request.
+        # HBA_PROFILE fixes it, and this asserts it stays fixed.
+        run: |
+          docker run -d --name hba -p 8000:8000 home-buying-analyzer:ci
+          for i in $(seq 1 30); do
+            if curl -fsS http://localhost:8000/health >/dev/null 2>&1; then break; fi
+            sleep 2
+          done
+          curl -fsS http://localhost:8000/health
+          echo
+          # /profile forces the TOML to load and parse. /health alone would pass even if
+          # the rulebook were unreachable, which is precisely the bug described above.
+          curl -fsS http://localhost:8000/profile | python -c "
+          import json, sys
+          body = json.load(sys.stdin)
+          assert body['verdict_bands']['take_min'] > body['verdict_bands']['watch_min'], body
+          print('profile loaded in container:', body['name'])
+          "
+          # A validation rejection needs no network, so it is safe here and proves the
+          # request path works end to end inside the image.
+          code=$(curl -s -o /dev/null -w '%{http_code}' -X POST http://localhost:8000/analyze \
+            -H 'Content-Type: application/json' -d '{"address":"1 Main St","price":-5}')
+          test "$code" = "422" || { echo "expected 422 for a negative price, got $code"; exit 1; }
+          echo "container smoke test OK"
+
+      - name: Container logs
+        if: always()
+        run: docker logs hba || true

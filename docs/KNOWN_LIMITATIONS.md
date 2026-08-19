@@ -141,6 +141,56 @@ Rent-vs-buy breakeven takes appreciation as a **user-adjustable input**, never a
 
 ---
 
+## The service is unauthenticated, so it binds to localhost only
+
+The HTTP layer ([ADR 0007](adr/0007-http-service-container-and-split-ci.md)) has no login,
+no API key, and no rate limit. That is a reasonable trade for a tool running on one machine
+on a home network, and it is the reason `docker-compose.yml` publishes `127.0.0.1:8000`
+rather than `0.0.0.0:8000` — the responses contain real household financial figures, so
+reaching it from the rest of the LAN should be a deliberate change. Exposing it to the
+internet would require auth first. See [THREAT_MODEL.md](THREAT_MODEL.md).
+
+---
+
+## Batch mode is sequential, and that is not an accident
+
+A ten-property shortlist takes roughly ten times as long as one property. These are free
+public endpoints — OSRM's demo server and Nominatim both ask for polite use, and the HTTP
+layer throttles per host. Firing ten concurrent requests at a county GIS server to save
+nine seconds on a weekend shortlist is how a useful public service ends up locked down.
+
+Batch output files are named by **CSV line number, not by rank**. Re-running a shortlist
+after a price change therefore overwrites the same filenames instead of shuffling them,
+which keeps week-over-week diffs readable. Ranking lives in `summary.csv` and `shortlist.md`.
+
+---
+
+## A property with no county record is capped, not trusted
+
+Two addresses with no parcel match once scored a perfect 100 and outranked a house with
+complete data, because every deduction is guarded against missing values — silence read as
+perfection. Scores are now capped below the TAKE threshold when facts are unknown, with the
+unknowns listed ([ADR 0005](adr/0005-capital-expenses-deduct-and-unknowns-pin.md)).
+
+The cap is one-directional: it can only lower a score, never raise one. A capped score means
+"not enough is known to recommend this", not "this is a worse house".
+
+One cosmetic artifact remains: when square footage is unknown, the true-monthly range
+collapses to a single number, because all three maintenance-reserve methods need sqft.
+
+---
+
+## The container image was first built in CI, not locally
+
+Docker was unavailable in the environment where the `Dockerfile` was written, so its first
+real execution is the CI build. What *was* verified locally is the failure mode that
+mattered: installing the package into a clean virtualenv and running it the way the image
+does, which is how `load_profile()` was found to resolve into `site-packages` once installed
+and how `HBA_PROFILE` came to exist. The CI smoke test calls `/profile` specifically to keep
+that regression caught.
+
+---
+
 ## Not financial advice
 
 A personal decision-support tool. Every value is real and cited, and none of it is investment advice. Verify against a specific TMS or address, with a licensed inspector, lender, and insurer, before committing capital.
