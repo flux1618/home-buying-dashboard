@@ -21,7 +21,12 @@ api = [
 dev = ["pytest>=8.0", "httpx>=0.27"]   # httpx backs fastapi's TestClient
 
 [tool.setuptools.packages.find]
-include = ["analyzer*", "service*"]
+# `ledger*` is here for a reason worth remembering: CI installs the project and then runs
+# bare `pytest`, which does not put the working directory on sys.path. A package that is
+# importable locally because of the current directory and missing from this list passes
+# every local run and fails in CI with ModuleNotFoundError. That has happened once already,
+# with the scripts under tools/.
+include = ["analyzer*", "service*", "ledger*"]
 
 [tool.setuptools.package-data]
 analyzer = ["fixtures/*.json"]

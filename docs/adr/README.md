@@ -16,3 +16,4 @@ Format is deliberately lightweight — context, decision, alternatives, conseque
 | [0008](0008-browser-rules-are-compiled-not-rewritten.md) | The static page is the fourth door; its scoring rules are compiled from the profile, never hand-written | Accepted |
 | [0009](0009-hazard-risk-is-a-caveat.md) | FEMA National Risk Index reports percentiles as caveats and never deducts points; hazards are profile configuration | Accepted |
 | [0010](0010-inverse-affordability-is-two-answers.md) | Max-price is bisected over the real cost engine, returns a lender and a household price, and the browser copy is held honest by a parity test | Accepted |
+| [0011](0011-ledger-is-append-only-and-separate.md) | Saved properties live in a separate append-only SQLite ledger; a score delta is only reported when the engine version and profile fingerprint match | Accepted |

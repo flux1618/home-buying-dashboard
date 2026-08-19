@@ -308,6 +308,46 @@ it, so the label corrects itself if FEMA changes resolution.
 modeled", which reads as an absence and is not one. Unmodeled hazards are rendered as
 unknown and sorted below every measured hazard, never as zero.
 
+## Address matching in the ledger is shallow on purpose
+
+The saved-property ledger keys a house by its geocoded `matched_address`, normalized only by
+upper-casing, stripping punctuation, and collapsing whitespace. It is not an address parser.
+That means "606 Andre Ct" and "606 Andre Court" are the same key only because the Census
+geocoder returns the same canonical string for both -- the normalizer itself would treat them as
+two houses.
+
+The choice is deliberate. A partial address parser fails by silently merging two different
+properties on the same street, and that failure is invisible in the output. A missing parser
+fails by showing you the same house twice, which you notice immediately.
+
+## An address the geocoder could not resolve gets its own key, and cannot be merged later
+
+When geocoding degrades, the ledger stores the property under an `unresolved:` prefix so a
+guessed key can never collide with a resolved one. If the same house is later analyzed
+successfully it lands under a second, different key.
+
+There is no merge command, and there cannot be one: the `analyses` table is append-only
+([ADR 0011](adr/0011-ledger-is-append-only-and-separate.md)), so existing rows cannot be
+re-pointed at a different property. The remedy is to re-analyze once geocoding works and then
+delete the unresolved stub, which `forget` still permits while it holds a single analysis and no
+substantive journal entries.
+
+## The ledger is single-user and unauthenticated
+
+There are no accounts, no per-user rows, and no authorization checks. Anyone who can reach the
+API can read every saved address, every financial analysis, and every journal entry. This is the
+same accepted risk as the rest of the service -- compose binds to `127.0.0.1` only -- but it is
+worth stating separately, because the ledger is the first component that accumulates private
+data rather than recomputing it.
+
+## A stored analysis may be missing fields the engine later adds
+
+Documents are stored as they were produced. A document written today will not contain a field
+introduced next month, and nothing backfills it, because backfilling would mean editing a
+historical observation. Every reader of a saved document has to tolerate absence. This is also
+why a score delta is suppressed when `engine_version` differs: the two numbers were produced by
+different code and comparing them would be arithmetic on incompatible units.
+
 ---
 
 ## Not financial advice

@@ -13,7 +13,8 @@ Scope is deliberately proportionate. This is a two-person tool, not a regulated 
 | Household income, expenses, savings | High | `data.json` today — **see gap below** |
 | Candidate addresses and notes | Medium | Local artifact / future backend |
 | Uploaded documents (inspection, disclosure, HOA) | High — may contain names, defects, financials | Local only |
-| Decision journal | Medium | Repo |
+| Decision journal | Medium | `ledger.db` (was: repo) |
+| Saved shortlist: real addresses, full financial analyses, private notes | High -- this is the one store that accumulates rather than recomputes | `ledger.db`, outside the repo tree |
 | Upstream API tokens (FRED, FCC BDC) | Medium | Environment / CI secrets |
 
 ---
@@ -57,6 +58,21 @@ Per [ADR 0004](adr/0004-llm-scope-boundary.md), models only extract from documen
 - **Prefer a local model** where quality allows. A self-hosted model on the existing cluster means documents never leave the network at all.
 - **Log every call** — timestamp, document hash, fields requested, provider, and whether redaction fired. This doubles as the eval log.
 
+### The ledger file
+
+- **It lives outside the repository by default** -- `$HBA_DATA_DIR`, else the XDG data
+  directory. A default of `./ledger.db` would put real addresses and a real household's
+  financial position one `git add -A` away from a public commit.
+- **`.gitignore` covers `ledger.db` and `*.db` anyway**, as a second layer, because `--db
+  ./scratch.db` while debugging is a normal thing to type.
+- **In the container it is a named volume separate from the response cache.** The cache is
+  disposable; the ledger is not, and nothing upstream can replay it. Sharing one volume would
+  invite treating both as scratch space the first time the cache needs clearing.
+- **No content is ever sent anywhere.** The ledger is written by local doors only; no source
+  adapter reads from it and nothing uploads it.
+- **Back it up by copying one file.** `sqlite3 ledger.db .dump` produces a plain-text export,
+  which is also worth knowing before trusting a single file with a year of decisions.
+
 ### Documents
 
 - Stored locally, never committed. `.gitignore` covers `documents/` and `*.pdf` at the root.
@@ -92,9 +108,11 @@ One rule: **the committed artifact contains only aggregate market data and non-s
 | Upstream APIs see the addresses queried | Unavoidable — geocoding requires sending the address. All are government or public sources. |
 | Third-party LLM sees redacted document text | Mitigated by redaction and page limiting; eliminated entirely if the local model path is used. |
 | Illustrative financials could be mistaken for real ones | Labeled in the UI and in this document. |
+| The ledger is unencrypted at rest | Disk-level encryption is the operating system's job and doing it again in the application would mean holding a key somewhere in the same threat boundary. A stolen laptop is not a threat this file can defend against by itself. |
+| A mistaken entry in the ledger is permanent | Append-only is the point ([ADR 0011](adr/0011-ledger-is-append-only-and-separate.md)). Corrections are new rows, and the audit value of an uneditable record outweighs tidiness. |
 
 ---
 
 ## Review
 
-Revisit when any of these changes: the API becomes publicly reachable, a second user is added, document upload ships, or a cloud LLM provider is introduced. Each of those invalidates an assumption above.
+Revisit when any of these changes: the API becomes publicly reachable, a second user is added, document upload ships, a cloud LLM provider is introduced, or the ledger is synced or backed up anywhere off the machine that wrote it. Each of those invalidates an assumption above.

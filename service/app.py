@@ -37,6 +37,8 @@ from pydantic import BaseModel, Field, field_validator
 
 from analyzer import batch
 from analyzer.core.profile import BuyerProfile, load_profile
+from ledger import Ledger, connect
+from ledger.repo import JOURNAL_KINDS, STATUSES, LedgerError, PropertyNotFound
 from analyzer.core.analyze import ENGINE_VERSION
 from analyzer.core.cost import solve_max_price
 from analyzer.pipeline import PipelineAborted, run
@@ -104,6 +106,34 @@ class MaxPriceRequest(BaseModel):
     year_built: int | None = Field(default=None, ge=1700, le=2100)
     hoa_monthly: float = Field(default=0.0, ge=0, le=10_000)
     owner_occupied: bool = True
+
+
+class StatusRequest(BaseModel):
+    """A status move, and optionally the reason for it.
+
+    `note` is optional in the schema but the journal entry is not: the transition is
+    recorded either way. Making the note required would produce "n/a" as the most common
+    reason on record, which is worse than an empty one.
+    """
+    model_config = {"extra": "forbid"}
+
+    status: Literal["candidate", "touring", "offer", "passed", "archived"]
+    note: str | None = Field(default=None, max_length=2000)
+
+
+class JournalRequest(BaseModel):
+    """One journal entry.
+
+    `resolves` is what makes this a decision journal: an outcome entry points back at the
+    assumption it settles, so the ledger can later show which claims were never checked.
+    """
+    model_config = {"extra": "forbid"}
+
+    kind: Literal["assumption", "decision", "observation", "outcome", "status"]
+    body: str = Field(min_length=1, max_length=4000)
+    property_key: str | None = None
+    resolves: int | None = Field(default=None, ge=1)
+    author: str | None = Field(default=None, max_length=120)
 
 
 class AnalysisResponse(BaseModel):
@@ -385,6 +415,196 @@ def create_app() -> FastAPI:
                 if e.ok
             ],
         }
+
+    # -- ledger ---------------------------------------------------------------
+    #
+    # Phase 3. Every handler below opens its own connection and closes it.
+    #
+    # That is not laziness about pooling, it is a requirement: these endpoints are
+    # synchronous `def`, so FastAPI runs them in a worker thread, and a sqlite3 connection
+    # may not be used from a thread other than the one that created it. A module-level
+    # connection would work in testing and then raise ProgrammingError under real
+    # concurrency -- the worst possible failure schedule. Opening a SQLite connection is
+    # microseconds; there is nothing to save here.
+    #
+    # Keys contain spaces (`606 ANDRE CT SPARTANBURG SC 29301`), so callers must
+    # percent-encode them in the path. That is a fair trade for a key a human can read in
+    # a log line, and every HTTP client does it automatically.
+
+    @app.exception_handler(PropertyNotFound)
+    def property_not_in_ledger(request: Request, exc: PropertyNotFound) -> JSONResponse:
+        """404. The key is well-formed, there is simply nothing saved under it."""
+        return JSONResponse(
+            status_code=404,
+            content={
+                "error": "property_not_in_ledger",
+                "detail": str(exc),
+                "hint": "GET /ledger/properties lists every key that exists.",
+            },
+        )
+
+    @app.exception_handler(LedgerError)
+    def ledger_refused(request: Request, exc: LedgerError) -> JSONResponse:
+        """422, not 500. The ledger understood the request and declined it.
+
+        Every LedgerError message names the rule and the alternative, so it is returned
+        verbatim rather than replaced with a generic string.
+        """
+        return JSONResponse(
+            status_code=422,
+            content={"error": "ledger_refused", "detail": str(exc)},
+        )
+
+    @app.get("/ledger", tags=["ledger"])
+    def ledger_stats() -> dict[str, Any]:
+        """Counts, and the schema version of the file actually open.
+
+        The schema version is included because it is the fastest way to tell a stale
+        container from a stale database when something looks wrong.
+        """
+        conn = connect()
+        try:
+            return Ledger(conn).stats()
+        finally:
+            conn.close()
+
+    @app.get("/ledger/properties", tags=["ledger"])
+    def ledger_list(
+        status: Annotated[Literal["candidate", "touring", "offer", "passed", "archived"] | None, Query()] = None,
+        include_archived: Annotated[bool, Query(description="Archived houses are hidden by default.")] = False,
+    ) -> dict[str, Any]:
+        conn = connect()
+        try:
+            rows = Ledger(conn).list_properties(status=status, include_archived=include_archived)
+        finally:
+            conn.close()
+        return {"count": len(rows), "properties": rows}
+
+    @app.post("/ledger/properties", status_code=201, tags=["ledger"])
+    def ledger_save(payload: Annotated[PropertyRequest, Body()]) -> dict[str, Any]:
+        """Analyze an address and append the result to the ledger.
+
+        Deliberately runs the analysis here rather than accepting a document from the
+        caller. A `POST` that stored whatever JSON it was handed would let a hand-edited
+        score into the record, and the whole value of the table is that every row is
+        something the engine actually said.
+
+        201 whether or not the property already existed, because a new *analysis* was
+        created either way. `first_time` says which it was.
+        """
+        started = time.monotonic()
+        result = run(
+            payload.address,
+            payload.price,
+            profile=profile(),
+            hoa_monthly=payload.hoa_monthly,
+            roof_age_years=payload.roof_age_years,
+            hvac_age_years=payload.hvac_age_years,
+            garage_spaces=payload.garage_spaces,
+        )
+        conn = connect()
+        try:
+            saved = Ledger(conn).save_analysis(result.document, profile=profile())
+        finally:
+            conn.close()
+        return {
+            "property": saved["property"],
+            "analysis_id": saved["analysis_id"],
+            "first_time": saved["created"],
+            "diff": saved["diff"],
+            "degraded_sources": result.degraded_stations,
+            "elapsed_seconds": round(time.monotonic() - started, 2),
+            "engine_version": ENGINE_VERSION,
+        }
+
+    @app.get("/ledger/properties/{key:path}/document", tags=["ledger"])
+    def ledger_document(key: str) -> dict[str, Any]:
+        """The stored document, exactly as it was written.
+
+        Not recomputed. A re-run under a newer engine is a different answer, and this
+        endpoint exists to answer "what did we know when we decided".
+        """
+        conn = connect()
+        try:
+            return Ledger(conn).latest_document(key)
+        finally:
+            conn.close()
+
+    @app.patch("/ledger/properties/{key:path}/status", tags=["ledger"])
+    def ledger_set_status(key: str, payload: Annotated[StatusRequest, Body()]) -> dict[str, Any]:
+        conn = connect()
+        try:
+            return Ledger(conn).set_status(key, payload.status, note=payload.note)
+        finally:
+            conn.close()
+
+    @app.delete("/ledger/properties/{key:path}", tags=["ledger"])
+    def ledger_forget(key: str) -> dict[str, Any]:
+        """Delete a mistyped address. Refuses once there is a record worth keeping.
+
+        409 rather than 422 on refusal: nothing about the request is malformed, it conflicts
+        with the state of the resource. The fix is a different verb -- set the status to
+        `passed` -- not a corrected payload.
+        """
+        conn = connect()
+        try:
+            return Ledger(conn).forget_property(key)
+        except PropertyNotFound:
+            raise
+        except LedgerError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from None
+        finally:
+            conn.close()
+
+    @app.get("/ledger/properties/{key:path}", tags=["ledger"])
+    def ledger_property(key: str) -> dict[str, Any]:
+        """One house: identity, status, full history, journal, and the diff.
+
+        Declared after the more specific `/document` and `/status` routes above. FastAPI
+        matches in declaration order and `{key:path}` is greedy, so putting this first
+        would swallow both of them.
+        """
+        conn = connect()
+        try:
+            return Ledger(conn).get_property(key)
+        finally:
+            conn.close()
+
+    @app.get("/ledger/journal/open", tags=["ledger"])
+    def ledger_open_assumptions() -> dict[str, Any]:
+        """Assumptions and decisions nothing has come back to close."""
+        conn = connect()
+        try:
+            entries = Ledger(conn).open_assumptions()
+        finally:
+            conn.close()
+        return {"count": len(entries), "open": entries}
+
+    @app.get("/ledger/journal", tags=["ledger"])
+    def ledger_journal(
+        property_key: Annotated[str | None, Query(description="Omit for every entry, including general ones.")] = None,
+        limit: Annotated[int, Query(ge=1, le=1000)] = 200,
+    ) -> dict[str, Any]:
+        conn = connect()
+        try:
+            entries = Ledger(conn).journal(key=property_key, limit=limit)
+        finally:
+            conn.close()
+        return {"count": len(entries), "entries": entries}
+
+    @app.post("/ledger/journal", status_code=201, tags=["ledger"])
+    def ledger_add_journal(payload: Annotated[JournalRequest, Body()]) -> dict[str, Any]:
+        conn = connect()
+        try:
+            return Ledger(conn).add_journal_entry(
+                kind=payload.kind,
+                body=payload.body,
+                key=payload.property_key,
+                resolves=payload.resolves,
+                author=payload.author,
+            )
+        finally:
+            conn.close()
 
     return app
 

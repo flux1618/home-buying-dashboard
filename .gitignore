@@ -21,3 +21,12 @@ runs/
 
 # Local profile overrides with real financial figures
 buyer_profile.local.toml
+
+# The saved-property ledger. Contains real addresses of houses under consideration, full
+# financial analyses of them, and a private decision journal. It defaults to the XDG data
+# directory precisely so it is never inside this tree, but a `--db ./ledger.db` while
+# debugging should not be one `git add -A` away from being published.
+ledger.db
+*.db
+*.db-wal
+*.db-shm

@@ -35,6 +35,9 @@ ENV PATH="/opt/venv/bin:$PATH"
 COPY pyproject.toml ./
 COPY analyzer/ ./analyzer/
 COPY service/ ./service/
+# The saved-property ledger (Phase 3). Stdlib-only — sqlite3 is in CPython, so this adds
+# nothing to the arm64 wheel problem that dictated the Python version above.
+COPY ledger/ ./ledger/
 
 # Cache keyed by architecture. Sharing one cache between an amd64 and an arm64 build would
 # let a wheel built for the wrong platform be reused.
@@ -58,6 +61,7 @@ ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PATH="/opt/venv/bin:$PATH" \
     HBA_CACHE_DIR=/var/cache/hba \
+    HBA_DATA_DIR=/var/lib/hba \
     HBA_PROFILE=/app/buyer_profile.toml
 
 # Non-root. The container reads public data and writes a response cache; it has no reason
@@ -82,6 +86,14 @@ COPY --chown=analyst:analyst examples/ ./examples/
 # on every container start is rude and pointless.
 RUN mkdir -p /var/cache/hba && chown analyst:analyst /var/cache/hba
 VOLUME ["/var/cache/hba"]
+
+# The ledger is a *separate* volume from the cache, and the distinction matters. The cache
+# is disposable — delete it and the county tells you the same facts again. The ledger is
+# not: it holds the record of which houses were considered and what was decided, and there
+# is nowhere to fetch that back from. Sharing one volume would invite treating both as
+# scratch space the first time the cache needs clearing.
+RUN mkdir -p /var/lib/hba && chown analyst:analyst /var/lib/hba
+VOLUME ["/var/lib/hba"]
 
 USER analyst
 EXPOSE 8000

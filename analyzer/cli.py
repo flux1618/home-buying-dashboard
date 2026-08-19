@@ -122,6 +122,42 @@ def render_max_price(solution: dict | None) -> None:
         print(f"    {DIM}· {note}{OFF}")
 
 
+def render_ledger(saved: dict) -> None:
+    """Confirm what was written, then report what moved since last time.
+
+    The delta is the whole reason to save at all, so it prints unprompted. The `comparable`
+    flag is honoured strictly: when the engine version or the buyer profile changed between
+    the two rows, the score delta is printed as unusable rather than shown next to the price
+    change, because a reader will otherwise attribute a change in our own rules to the market.
+    """
+    print(f"\n  {BOLD}Ledger{OFF}")
+    label = "Saved as" if saved["first_time"] else "Appended to"
+    print(f"    {label:<12} {saved['key']}  {DIM}#{saved['analysis_id']}{OFF}")
+
+    diff = saved.get("diff")
+    if not diff:
+        print(f"    {DIM}First analysis of this address - nothing to compare against yet.{OFF}")
+        return
+
+    price = diff["price_delta"]
+    if price:
+        direction = "Price down" if price < 0 else "Price up"
+        pct = f" ({diff['price_pct']:+.1f}%)" if diff["price_pct"] is not None else ""
+        print(f"    {direction:<12} ${abs(price):,.0f}{pct}   {DIM}since {diff['from_at'][:10]}{OFF}")
+    else:
+        print(f"    {DIM}Price unchanged since {diff['from_at'][:10]}.{OFF}")
+
+    if diff["comparable"]:
+        if diff["score_delta"]:
+            print(f"    {'Score':<12} {diff['score_delta']:+d}")
+        if diff["verdict_changed"]:
+            print(f"    {'Verdict':<12} {diff['verdict_from']} -> {diff['verdict_to']}")
+    else:
+        print(f"    {GOLD}Score is not comparable to the earlier run:{OFF}")
+        for reason in diff["incomparable_because"]:
+            print(f"      {DIM}{reason}{OFF}")
+
+
 def render_hazards(profile: dict | None) -> None:
     """FEMA National Risk Index for the census tract, printed after the money.
 
@@ -222,6 +258,20 @@ def main(argv: list[str] | None = None) -> int:
             "ceiling, given as a percent. Bare --max-price uses the profile target."
         ),
     )
+    parser.add_argument(
+        "--save",
+        action="store_true",
+        help=(
+            "append this analysis to the local ledger (Phase 3). Never overwrites an earlier "
+            "one: re-running the same address records a second row and reports what moved."
+        ),
+    )
+    parser.add_argument(
+        "--db",
+        default=None,
+        metavar="PATH",
+        help="ledger database file; defaults to $HBA_DATA_DIR or the XDG data directory",
+    )
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args(argv)
 
@@ -255,10 +305,30 @@ def main(argv: list[str] | None = None) -> int:
             current_year=datetime.now().year,
         ).to_dict()
 
+    if args.save:
+        # Imported here, not at module scope. The ledger is the only part of this CLI that
+        # touches a filesystem outside the cache, and an unconditional import would mean a
+        # plain `analyze` run creates a database directory it never uses.
+        from ledger import Ledger, connect
+
+        conn = connect(args.db)
+        try:
+            saved = Ledger(conn).save_analysis(result.document, profile=profile)
+        finally:
+            conn.close()
+        result.document["ledger"] = {
+            "key": saved["property"]["key"],
+            "analysis_id": saved["analysis_id"],
+            "first_time": saved["created"],
+            "diff": saved["diff"],
+        }
+
     if args.json:
         print(json.dumps(result.document, indent=2))
     else:
         render(result.document)
+        if args.save:
+            render_ledger(result.document["ledger"])
     return 0
 
 

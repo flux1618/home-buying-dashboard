@@ -117,3 +117,20 @@ def no_disk_cache(monkeypatch, tmp_path):
 def no_ambient_api_keys(monkeypatch):
     """A developer's real FCC key must not change what the suite asserts."""
     monkeypatch.delenv("FCC_API_KEY", raising=False)
+
+
+@pytest.fixture(autouse=True)
+def no_real_ledger(monkeypatch, tmp_path):
+    """Point the ledger at a throwaway directory for every test in the suite.
+
+    Autouse and unconditional, because the failure this prevents is not a flaky test --
+    it is the suite writing rows into the real saved-property database on the developer's
+    machine, or reading houses out of it and asserting against whatever happens to be
+    saved that week. Both are silent.
+
+    `XDG_DATA_HOME` is cleared as well as `HBA_DATA_DIR`, since that is the second place
+    `ledger.db.database_path` looks. Overriding only the first would leave a machine that
+    sets XDG_DATA_HOME still exposed.
+    """
+    monkeypatch.setenv("HBA_DATA_DIR", str(tmp_path / "ledger"))
+    monkeypatch.delenv("XDG_DATA_HOME", raising=False)
