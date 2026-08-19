@@ -127,6 +127,60 @@ That's a repeatable workflow for me, that is open to change, but has utility whe
 11. tax benefit: SC applies a 4% assessment ratio to owner-occupied legal residences versus 6% for everything else, and the legal-residence exemption also removes school operating millage
 
 
+## To Do Roadmap
+
+
+### Phase 1 — "Analyze a Property" vertical slice
+
+Goal: Paste an Address or listing -> receive a proper report with results and sources
+
+1. Geocode the address.
+2. Compute **full cost of ownership**, not just PITI — corrected 4% vs. 6% assessment ratio, actual district millage, insurance, maintenance reserve, HOA.
+3. Pull **FEMA National Risk Index** for the tract.
+4. Compute a **rush-hour commute** to the work anchor, not a free-flow estimate — isochrone polygons over the I-85 / I-26 pinch points.
+5. Verify **broadband** at the address against the SC broadband map.
+6. Return a 0–100 score where **every value is stamped with its source and retrieval date.**
+
+This covers four reasonable criteria and will be useful for touring. 
+
+### Phase 2 — LLM document analyzer
+
+Goal: Paste an inspection, HOA bylaws and seller disclosure -> structured JSON, important to keep AI from any math. 
+
+
+### Phase 3 — Saved-property backend
+
+Per-user state: shortlist, notes, price-change history, decision journal entries. Only built once houses have been combed through for what we like aesthetically.
+
+### Phase 4 — Ongoing monitoring
+
+1. Amortization calculator and scenario solver
+
+Goal: Be able to put in house with variables for down payment, rate, insurance, HOA dues, fees in, and calculate monthly PITI and max price under a DTI ceiling out.
+
+2. Graphical rate sensitivity band
+
+Goal: Visualize 5.0% - 7.5% rates against the same house, and quantify a wait vs buy payment delta.
+
+3. Nightly `data/parcels.parquet` from Spartanburg County GIS Rest service - pull tax PIN, assessed value, tax district, school attendance zone, last sale.
+
+Goal: Have it automatically update and see how we can use tax code to our advantage.
+
+4. Weekly pulls of FRED `MORTGAGE30US` weekly pull (Thursdays).
+
+5. Market Velocity Metrics
+
+6. Additional Features, but not necessary:
+ - Natural-language query over dataset.
+ - Discord Webhooks alerts on price drops and new matches, with reminders to check tasks
+
+
+
+
+### Permanent stretch goals (not planned)
+
+- Zillow / Redfin listing extraction — terms prohibit it.
+- MLS integration — requires an agent relationship.
 
 
 ---
