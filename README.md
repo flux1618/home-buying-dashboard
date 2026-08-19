@@ -4,6 +4,10 @@ A single-page decision tool that turns a home-buying question into a structured,
 
 **Live:** [spartanburg.pplx.app](https://spartanburg.pplx.app)
 
+<a href="docs/dashboard-full.jpg"><img src="docs/dashboard-hero.jpg" alt="Home-Buying Decision Dashboard — submarket map with price, drive-time, and flood-risk layers, above the Spartanburg County market snapshot" width="100%"></a>
+
+<sub><a href="docs/dashboard-full.jpg">See the full page</a> — map, affordability engine, submarket scorecard, timing signals, property scorer, and cash-flow runway.</sub>
+
 ---
 
 ## Use case/user story: Why I built this
