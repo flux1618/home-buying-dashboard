@@ -1,51 +1,74 @@
 # Home-Buying Decision Dashboard
 
-A single-page decision tool that turns a home-buying question into a structured, source-cited answer. Built to demonstrate how I use AI as a research force multiplier — not as a decision-maker — for a real-world, high-stakes decision.
+A decision-support system that turns a high-stakes, messy, real-world question — *where and when do we buy a house in Spartanburg County, SC* — into a structured, source-cited answer. Every number on the page points back to a primary source with a retrieval date.
 
 **Live:** [spartanburg.pplx.app](https://spartanburg.pplx.app)
 
+> This is a working tool for a real purchase happening in 2027, not a demo app. It doubles as my portfolio piece for Forward Deployed Engineer work, because the shape of the problem is identical: ingest untrustworthy external data, normalize it, expose it to a non-engineer, and own it in production.
+
 ---
 
-## Use case/user story: Why I built this
+## Table of contents
 
-Life is full of change and since I'm moving from North Carolina to the Spartanburg, SC area, my partner and I wanted to plan on buying a house within 1-2 years, maybe around Q2-Q3 2027 or 2028. Because I need data to make informed decisions, I needed a tool with the following requirements:
+| Category | What lives here |
+|---|---|
+| [1. Home-Buying Decision Tools](#1-home-buying-decision-tools) | The domain logic — affordability, tax mechanics, scoring, rent-vs-buy |
+| [2. Data Pipeline & Integration](#2-data-pipeline--integration) | Where numbers come from, how they're normalized, how they refresh |
+| [3. Platform & Reliability Engineering](#3-platform--reliability-engineering) | Deploy targets, containers, CI/CD, observability, security |
+| [4. Discovery & Communication](#4-discovery--communication) | ADRs, known limitations, customer brief, demo |
+| [Roadmap](#roadmap) | What's next, in build order |
+
+---
+
+## Use case: why I built this
+
+I'm moving from Hope Mills, NC to the Spartanburg, SC area, and my partner and I plan to buy within 1–2 years — roughly Q2–Q3 2027, with the apartment lease as the hard deadline. Because I need data to make an informed decision, I needed a tool that would:
 
 1. Compare 10 submarkets on the same axes without opening 40 tabs.
-2. Keep every number created sourced.
-3. Separate empirical data from estimations.
-4. Challenge my intuition with an invalidation case, before committing to a sub market.
+2. Keep every number sourced.
+3. Separate empirical data from estimation.
+4. Challenge my intuition with an explicit invalidation case before I commit to a submarket.
 
-Because I understand that Zillow, Redfin, and other websites optimize for engagement, I simply wanted to pull their data to make actionable **decisions**.
+Zillow and Redfin optimize for engagement. I wanted their underlying data feeding an actual **decision**, not their UI.
 
----
+### The framework
 
-## UX/functionality: How to use
+The dashboard borrows a discipline from trading: **define invalidation before entry.** Every submarket carries a specific signal that would prove it's a bad buy. The top two picks have explicit walk-away conditions. Decisions are ordered by *logical sequence*, not by priority.
 
-Move the sliders. Every KPI recomputes live.
-
-- **Interactive map** — Spartanburg County + adjacent submarkets. Toggle layers for median price, work commute time isochrones (15/30/45 min), FEMA flood zones, school districts for long-term plans, grocery, hospital, highway-ramp POIs.
-- **Affordability engine** — PITI, front-end DTI, cash to close. Uses SC's 4% owner-occupied assessment ratio and Act 388 school-operating exemption.
-- **Rent versus buy breakeven points** — accounts for opportunity cost on the down payment. Sensitivity via appreciation and investment-return sliders.
-- **Submarket scorecard** — 10 submarkets scored on price, leverage, commute, safety, and fiber connectivity for my home needs. Reweight in the sidebar and watch the ranking change.
-- **Timing signals** — nine market watch-items with better/worse thresholds and links to their primary sources.
-- **Property scorer** — enter a hypothetical listing, get a 0–100 fit score against your hard rules and a red-flag checklist. Functionality will be improved later on since the ideal workflow for me is to mark MLS homes that I have favorited and then later will be pulled and scored in a spreadsheet style.
-- **Cash-flow runway** — This will determine whether or not we will hit our down payment using our financial data pulled from Monarch in our personal investment plan.
-
-Everything is a single `index.html` + `app.js` + `data.json`. No backend, build step, or dependencies beyond Leaflet and Chart.js from CDN.
+Buying a house is a one-time, high-stakes, hard-to-reverse transaction. Apartment → house is easy. House → house means selling, timing two closings, and moving a full household. So the priority is selectivity, structure, and risk control — in that order.
 
 ---
 
-## Rationality and Logic for the financial and logistical aspects behind this tool
+## 1. Home-Buying Decision Tools
 
-The dashboard respects the principle from a trading book: define invalidation before entry. Every submarket has a specific signal that would invalidate or prove that is a bad buy. The top 2 picks have conditions to determine whether or not to walk away. Secondly, there will be five decisions ordered based on their next steps, and not priority.
+The domain layer. Deterministic math only — **no LLM ever touches a dollar figure.**
 
-Project management discipline informed me that, since buying a house is a one-time, high-stakes deal the priority is selectivity structure, and risk management. Furthermore, since the transition from apartment to house is relatively easy, the transition from house to another house is a lot less compelling due to the need to sell the house and plan a move with more items.
+| Tool | What it does |
+|---|---|
+| **Affordability engine** | PITI, front-end DTI, cash to close. Applies SC's 4% owner-occupied assessment ratio and the Act 388 school-operating millage exemption. |
+| **Assessment-ratio reset** | SC taxes owner-occupied legal residences at **4%** and everything else at **6%**. A listing currently taxed at 6% (rental/second home) will show an inflated tax line that resets *down* for us — and an owner-occupied listing resets *up* if we ever rent it out. The tool models both sides instead of assuming the owner-occupied path. |
+| **Rent vs. buy breakeven** | Includes opportunity cost on the down payment. Sensitivity sliders for appreciation and investment return. |
+| **Submarket scorecard** | 10 submarkets scored on price, leverage, commute, safety, fiber. Reweightable in the sidebar; ranking recomputes live. |
+| **Timing signals** | Nine market watch-items with better/worse thresholds, each linked to its primary source. |
+| **Property scorer** | Enter a candidate listing, get a 0–100 fit score against hard rules plus a red-flag checklist. |
+| **Cash-flow runway** | Whether we actually hit the down-payment target on schedule, from real household financials. |
+| **Interactive map** | Median price, 15/30/45-min commute isochrones, FEMA flood zones, school districts, grocery / hospital / highway-ramp POIs. |
+
+### Buyer profile as configuration
+
+Hard constraints live in configuration, not in code: commute anchor, HOA ceiling, fiber requirement, price target, 20-minute drive rule. The goal is a `buyer_profile.yaml` so the same engine can be pointed at a different buyer — hospital employee, fully-remote engineer, school-district-first family — without editing logic. A decision engine that serves three personas is a meaningfully different artifact than a tool that serves one person.
+
+### Decision journal
+
+Assumptions get recorded with a date, and outcomes get recorded when they land. The point is to show whether the *process* was sound, separately from whether the outcome was lucky.
 
 ---
 
-## Data Source
+## 2. Data Pipeline & Integration
 
-Every number generated must have a pointer to an actual source, otherwise we will be making uninformed decisions.
+Every value has a pointer to a real source, or it doesn't ship.
+
+### Current sources
 
 | Layer | Source |
 |---|---|
@@ -65,78 +88,165 @@ Every number generated must have a pointer to an actual source, otherwise we wil
 | BMW employment | [BMW Press](https://www.press.bmwgroup.com/usa/) |
 | SC WARN filings | [SC Dept of Employment & Workforce](https://www.dew.sc.gov/) |
 
-Estimates (typical millage, generic fiber coverage, forecast paths) are labeled inline to clarify that they are estimates.
+Estimates (typical millage, generic fiber coverage, forecast paths) are labeled inline as estimates.
+
+### Provenance contract
+
+Every field in `data.json` carries `value`, `source_url`, `retrieved_at`, and `confidence` (`measured` / `derived` / `estimated`). The UI renders that provenance rather than hiding it. If a source is stale past its threshold, the UI says so instead of silently showing an old number.
+
+### Refresh model
+
+Scheduled ETL emits a versioned artifact; the frontend stays a static consumer of that artifact. Global market data (rates, inventory, permits, parcels) refreshes on a schedule. Per-user state (saved properties, notes, price-change history) is a separate concern and gets a real backend only when house tours actually begin.
+
+### Graceful degradation
+
+External sources fail — that's the normal case, not the exception. The pipeline is built so that a dead OSRM router yields a stamped stale route rather than a blank card, an unreachable broadband API yields "unverified" rather than "no coverage," and each degradation path has a test.
+
+### On listing data
+
+**Listing extraction from Zillow / Redfin is a permanent stretch goal, not a roadmap item.** Their terms prohibit it and real MLS access requires an agent relationship. The system builds on county records, FEMA, FRED, Census, and OSM — sources that are actually open. Listings enter the system by manual paste or by a future document analyzer, not by extraction.
 
 ---
 
-## Leveraging AI and keeping my vision intact
+## 3. Platform & Reliability Engineering
 
+### Current shape
 
-**How I setup my requirements:**
-- The constraints (commute anchor, HOA ceiling, fiber requirement, price target, 20 minute drive rule)
-- The framework (define invalidation, rank then invalidation criteria, decisions ordered stepwise)
-- determining what sources to trust and what submarkets to include.
-- the framing of the five decisions needed in the importance of challenging intuition, as to avoid a reliance on AI making decisions
+- Single static site: `index.html` + `app.js` + `data.json`. No build step.
+- Leaflet 1.9.4 (map) and Chart.js 4.4.4 (charts), both from CDN.
+- ~297 KB `data.json` precompiled from primary sources.
+- Fontshare Satoshi + General Sans, dark-mode default with light toggle.
+- Loads in under 1s over cable; works offline once loaded (tiles cache).
 
-**What AI was best for:**
-- Pull primary source data across 10 submarkets in parallel
-- Compute commute time isochrones from an OSRM grid
-- Compile Redfin, crime, broadband, and routing data into a single normalized `data.json`
-- Write the HTML/JS scaffolding (I reviewed and edited)
-- Screenshot-test the layout at multiple viewports before publishing
+### Two deploy targets, on purpose
 
-Setting constraints and making decisions keeps me in charge, while AI is best for pulling repetitive tasks, and human-error-prone tasks.
+| Target | Why it exists |
+|---|---|
+| **Static** (S3 / pplx.app / any CDN) | Zero cost, zero ops, survives indefinitely, works offline |
+| **Containerized** (multi-arch Docker on K3s) | Where the scheduled ETL, the API, and the observability stack live |
+
+This is a deliberate architectural choice with an ADR behind it, not Kubernetes for its own sake. The dashboard must remain deployable by someone with no cluster; the pipeline needs somewhere real to run. I already run a multi-node K3s cluster on Raspberry Pi 5 hardware, so `linux/arm64` images are a requirement, not a flex.
+
+### CI/CD and observability
+
+- GitHub Actions: lint, unit tests on the financial math, multi-arch image build, deploy.
+- Contract tests on `data.json` — schema, required provenance fields, staleness bounds.
+- Prometheus metrics and a Grafana panel on the app and the ETL: run duration, source success rate, artifact age.
+
+### Security and privacy
+
+This app holds real household income and expense figures. Coming from healthcare, I treat that the way I'd treat PHI:
+
+- Redact personal financials before anything is sent to an external model.
+- Explicit retention policy on uploaded documents.
+- Auth on any private per-user record; nothing sensitive in the public static artifact.
+- Secrets in GitHub Actions / cluster secrets, never in the repo.
+
+See `docs/THREAT_MODEL.md`.
 
 ---
 
-## Technical details
+## 4. Discovery & Communication
 
-- Single-file static site. Loads in under 1s over cable.
-- Leaflet 1.9.4 for the map, Chart.js 4.4.4 for the two charts. Both from CDN.
-- 297 KB `data.json` payload precompiled from the primary sources. Regenerated by `compile.py` when the underlying data refreshes.
-- Fontshare Satoshi + General Sans, inline SVG logo (though I wouldn't mind Helvetica Neue), dark-mode default with light-mode toggle.
-- Works offline once loaded (map tiles cache).
+The category most portfolio projects skip. Documents live in `docs/`.
+
+| Artifact | Purpose |
+|---|---|
+| **Customer brief** | Who the user is, the decision they face, the deadline, hard constraints, what "done" means |
+| **ADRs** (`docs/adr/`) | Every consequential choice, with alternatives considered and the cost of being wrong — including *why Kubernetes* and *why not a backend yet* |
+| **Known limitations** | What the tool gets wrong, which numbers are estimates, which sources are unverified — stated up front, not buried |
+| **Architecture diagram** | Sources → ETL → artifact → UI, one page |
+| **Demo video (~5 min)** | Address in, scored decision out, with provenance shown |
+| **Field-visit checklist** | Mobile-friendly page for actual house tours — bridges the analysis to the in-person workflow |
+
+### Client mode vs. engineer mode
+
+A UI toggle between a stakeholder-facing view (conclusions, confidence, next actions) and a debug view (raw values, source URLs, retrieval timestamps, calculation traces). Translating engineering output for a non-technical stakeholder is the core FDE skill; this makes it a feature instead of a claim.
 
 ---
 
-## how to translate into career and work
+## Roadmap
 
-My personality is defined as someone who thinks deeply about self improvement and constant optimization even for the mundane stuff in my life. How this applies to this tool is:
+Built in this order, deliberately. One coherent vertical slice before any feature breadth.
 
-1. Define what decision I need to make.
-2. Define the requirements, and explicit no go.
-3. Define how to retrieve data, and avoid secondhand errors due to being lost in translation (eg, using opinions or aggregated data)
-4. Normalizing data with every number value source sourced.
-5. Scoring candidates with adjustable weights.
-6. Having an invalidation criteria.
-7. Ordering next steps based on logical timeline
+### Phase 1 — "Analyze a Property" vertical slice
 
-That's a repeatable workflow for me, that is open to change, but has utility when it comes to things like:  vendor selection, tool choice, migration planning, or any decision where there is a high noise to signal ratio.
+One endpoint / one path. Input: a street address. Output: a scored, fully-provenanced result.
 
-## To Do
-1. Amortization calculator
-2.  Actual pipeline with normalized data storage on repo
-3. Regenerating nightly data in data/parcels.parquet with Github actions. county REST service, return tax pin, assessed value, tax district, school attendance zone, and last sale
-4. Scenario Solver where I can input down payment, rate, insurance, HOA, fees and shows me monthly PITI plus max price which PITI stays under a % of income
-5. rate sensitivity band that plot at the same houses with 5.0% to 7.5% with 30 year at 6.5% that includes  oscillation within a few base points weekly, defining the payment delta to inform buy or wait decision
-6. Watcher to push notifications
-7. Natural language evaluation to query on tool
-8. Market velocity
-9. open API for spartanburg area GIS, that includes parcels, assessed values, service districts, and voting/school boundaries
-10. FRED  MORTGAGE30US , the Freddie Mac 30-year average, weekly each Thursday, free API key
-11. tax benefit: SC applies a 4% assessment ratio to owner-occupied legal residences versus 6% for everything else, and the legal-residence exemption also removes school operating millage
+1. Geocode the address.
+2. Compute **full cost of ownership**, not just PITI — corrected 4% vs. 6% assessment ratio, actual district millage, insurance, maintenance reserve, HOA.
+3. Pull **FEMA National Risk Index** for the tract.
+4. Compute a **rush-hour commute** to the work anchor, not a free-flow estimate — isochrone polygons over the I-85 / I-26 pinch points.
+5. Verify **broadband** at the address against the SC broadband map.
+6. Return a 0–100 score where **every value is stamped with its source and retrieval date.**
 
+This single slice touches all four categories and is genuinely useful the moment we start touring.
 
+### Phase 2 — LLM document analyzer
 
+Paste or upload an inspection report, HOA bylaws, or a seller's disclosure; get back validated, cited, structured JSON. Strict boundary: **AI does unstructured → structured extraction only. It never performs the mortgage arithmetic.** Redaction before send, eval logging, and human confirmation on every extracted field.
+
+### Phase 3 — Saved-property backend
+
+Per-user state: shortlist, notes, price-change history, decision journal entries. Only built once there are real houses to save.
+
+### Phase 4 — Ongoing intelligence
+
+- Amortization calculator.
+- Scenario solver: down payment / rate / insurance / HOA / fees in, monthly PITI and max price under a DTI ceiling out.
+- Rate sensitivity band, 5.0%–7.5% against the same house, quantifying the buy-vs-wait payment delta.
+- Nightly `data/parcels.parquet` from the Spartanburg County GIS REST service — tax PIN, assessed value, tax district, school attendance zone, last sale.
+- FRED `MORTGAGE30US` weekly pull (Thursdays).
+- Market velocity metrics.
+- Discord webhook alerts on price drops and new matches — event-driven, not just a dashboard.
+- Natural-language query over the dataset.
+
+### Permanent stretch goals (not planned)
+
+- Zillow / Redfin listing extraction — terms prohibit it.
+- MLS integration — requires an agent relationship.
+
+---
+
+## How I use AI, and how I keep my judgment in the loop
+
+**What I own:**
+- The constraints — commute anchor, HOA ceiling, fiber requirement, price target, 20-minute drive rule.
+- The framework — define invalidation, rank then invalidate, order decisions stepwise.
+- Which sources to trust and which submarkets to include.
+- The framing of the five decisions, specifically so the tool challenges my intuition instead of an AI making the call.
+
+**What AI is genuinely good at here:**
+- Pulling primary-source data across 10 submarkets in parallel.
+- Computing commute isochrones from an OSRM grid.
+- Normalizing Redfin, crime, broadband, and routing data into one `data.json`.
+- Writing HTML/JS scaffolding, which I then review and edit.
+- Screenshot-testing the layout at multiple viewports before publishing.
+
+Setting constraints and making decisions keeps me in charge. AI handles the repetitive and error-prone work.
+
+---
+
+## The transferable workflow
+
+This is the same loop I'd run on vendor selection, tool choice, or migration planning — any decision with a high noise-to-signal ratio:
+
+1. Define the decision.
+2. Define requirements and explicit no-gos.
+3. Define data retrieval, avoiding secondhand error (opinions, over-aggregated data).
+4. Normalize, with every value sourced.
+5. Score candidates with adjustable weights.
+6. Set invalidation criteria.
+7. Order next steps by logical sequence.
 
 ---
 
 ## License
 
-MIT License, feel free to adapt to your needs. Message me if you'd like help and if you build something on top of it, I'd love to see!
+MIT. Adapt it freely — message me if you want help, and I'd genuinely like to see what you build on top of it.
 
 ---
 
 ## Not financial advice
 
-This is a personal decision-support tool built as a portfolio piece. Every value on the page is real and cited, but nothing on this dashboard is investment advice or a recommendation to buy or sell real estate. Verify every estimate on a specific TMS or address before you commit capital.
+A personal decision-support tool and portfolio piece. Every value is real and cited, but nothing here is investment advice or a recommendation to buy or sell real estate. Verify every estimate against a specific TMS or address before committing capital.
