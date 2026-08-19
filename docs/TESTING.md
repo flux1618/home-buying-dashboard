@@ -119,3 +119,42 @@ including the `AF_UNIX` pair asyncio creates internally for its self-pipe. Every
 failed with a confident message about the internet that had nothing to do with the internet.
 It now blocks by address family: `AF_INET` and `AF_INET6` are still refused, local pairs
 allowed. A guard whose error message points at the wrong cause is worse than no guard.
+
+## The static page is tested as a fourth door, and verified by hand once
+
+`tests/test_snapshot_rules.py` guards the seam ADR 0008 describes. It does three separate
+jobs, and only the third one catches the failure that actually occurred:
+
+1. **The data is current.** `python tools/build_snapshot.py --check` re-derives the rule block
+   from `buyer_profile.toml` and fails if the committed `data.json` differs. This is the
+   realistic drift: someone tunes a weight and forgets to rebuild.
+2. **Every number traces to a source of truth.** Thresholds and penalties are compared against
+   the profile; the roof and HVAC dollar bands are compared against `analyzer/core/capex.py`
+   across five square-footage values, because the build script duplicates those five numbers
+   on purpose so it can run without the package installed.
+3. **The page actually uses the data.** `TestAppJsUsesCompiledRules` asserts `app.js` reads
+   `DATA.rules`, that the old hand-written branches are gone by literal string, and that no
+   bare threshold has reappeared inside `updateProperty()` once comments are stripped.
+
+Test 3 exists because tests 1 and 2 would both have passed on the broken version. Correct data
+sitting beside a function that ignores it is indistinguishable from a working system.
+
+**What the automated tests cannot check** is the rendered result in a browser, so that was
+verified by hand against engine output. Five cases, entered into the published page and
+compared to `analyze()` run locally on the same facts:
+
+| Case | Facts | Engine | Page |
+|---|---|---|---|
+| A | 606 Andre Ct — roof 17, HVAC 14, 2.5 baths, size not recorded | 52 WATCH | 52 WATCH |
+| B | $150/mo HOA, nothing else wrong | 75 TAKE | 75 TAKE |
+| C | all facts known, nothing failing | 100 TAKE | 100 TAKE |
+| D | roof 22, HVAC 19 — both overdue | 43 PASS | 43 PASS |
+| E | 25-minute commute | hard fail | 0 PASS, deal-breaker |
+
+A and B are the two the old page got backwards: it scored A as a confident TAKE, and rejected
+B outright with a score of 0. Case A also confirms the unknown-size path — the page skips the
+size deduction, prices capital expenses from the unknown-size band ($13,500–$33,500), and says
+in writing that the deduction was unapplied rather than passed.
+
+This is a manual check, not a regression test. If the rendering layer of `updateProperty()`
+changes materially, run it again.

@@ -435,52 +435,146 @@ function bindProperty(){
   });
 }
 function updateProperty(){
-  const price=+document.getElementById('p-price').value||0;
-  const sqft=+document.getElementById('p-sqft').value||0;
-  const hoa=+document.getElementById('p-hoa').value||0;
-  const gar=+document.getElementById('p-gar').value||0;
-  const fib=+document.getElementById('p-fib').value||0;
-  const com=+document.getElementById('p-com').value||0;
-  const sep=+document.getElementById('p-sep').value||0;
-  const fld=+document.getElementById('p-fld').value||0;
-  const roof=+document.getElementById('p-roof').value||0;
-  const hvac=+document.getElementById('p-hvac').value||0;
-  const [beds,baths] = (document.getElementById('p-bb').value||'0/0').split('/').map(s=>+s.trim());
+  /* Evaluates the rule set compiled from buyer_profile.toml into data.json by
+     tools/build_snapshot.py. It does NOT restate the rules.
+
+     This function used to hold its own hand-written copy of the thresholds, and it had
+     drifted from the Python engine into giving opposite answers -- it treated an HOA over
+     $100/mo as a hard fail (the engine deducts 25), and it gave an 17-year-old roof and a
+     14-year-old HVAC no penalty at all (the engine deducts 40 between them). On 606 Andre
+     Ct that was a confident TAKE on a house the engine scores 52 WATCH.
+
+     The ordering below mirrors analyzer/core/scoring.py deliberately: hard fails, then
+     deductions, then capital expenses, then the unknown-facts cap, and only then the
+     verdict bands. Reordering it will change answers. */
+  const R = DATA.rules;
+  const num = id => {
+    const el = document.getElementById(id);
+    const raw = (el.value || '').trim();
+    return raw === '' ? null : +raw;   // '' is unknown, which is not the same as 0
+  };
+
+  const price = num('p-price') || 0;
+  const sqft  = num('p-sqft');
+  const hoa   = num('p-hoa');
+  const gar   = num('p-gar');
+  const fib   = num('p-fib');
+  const com   = num('p-com');
+  const sep   = num('p-sep');
+  const fld   = num('p-fld');
+  const roof  = num('p-roof');
+  const hvac  = num('p-hvac');
+  const bb    = (document.getElementById('p-bb').value || '').split('/').map(s => +s.trim());
+  const beds  = isNaN(bb[0]) ? null : bb[0];
+  const baths = isNaN(bb[1]) ? null : bb[1];
   const targetPrice = readNum('i-price');
 
-  let score=100, flags=[];
-  // Deal-breakers: instant fail
-  if(hoa>100){score=0; flags.push(`HOA $${hoa}/mo exceeds your $100/mo deal-breaker → PASS`);}
-  if(fld===1){score=0; flags.push('In FEMA flood zone → PASS (deal-breaker)');}
-  if(sep===1){score=0; flags.push('Well/septic → PASS (deal-breaker)');}
-  if(com>20){score=0; flags.push(`${com}-min commute exceeds 20-min rule → PASS`);}
+  const facts = {hoa, beds, baths, sqft, garage: gar, fiber: fib};
+  let score = 100;
+  const hardFails = [], deductions = [], capex = [], caveats = [], unknown = [];
 
-  // Must-haves partial credit
-  if(beds<3){score-=20; flags.push(`Only ${beds} bedrooms (want 3)`);}
-  if(baths<3){score-=8; flags.push(`Only ${baths} baths (want 3)`);}
-  if(sqft<1400){score-=20; flags.push(`${sqft} sqft below 1,400 floor`);}
-  if(gar<2){score-=10; flags.push(`Only ${gar}-car garage (want 2)`);}
-  if(fib===0){score-=15; flags.push('No fiber — check FCC broadband map before offer');}
+  /* -- hard fails: disqualifying at any price -- */
+  if(com !== null && com > R.hard_fails.find(h => h.id === 'commute').threshold){
+    hardFails.push(`${com}-minute commute exceeds the ${R.hard_fails.find(h=>h.id==='commute').threshold}-minute limit`);
+  }
+  if(sep === 1) hardFails.push('Well or septic rather than public water and sewer');
+  if(fld === 1) hardFails.push('Inside a FEMA special flood hazard area');
 
-  // Age of systems
-  if(roof>=15) flags.push(`Roof age ${roof} yrs — expect replacement soon; escrow or credit`);
-  if(hvac>=12) flags.push(`HVAC age ${hvac} yrs — inspect + budget replacement`);
+  if(hardFails.length){
+    score = 0;
+  } else {
+    /* -- deductions: survivable, weighted -- */
+    R.deductions.forEach(rule => {
+      const v = facts[rule.id];
+      if(v === null || v === undefined) return;   // unknown never deducts, it caps later
+      let hit = false;
+      if(rule.compare === 'greater_than') hit = v > rule.threshold;
+      else if(rule.compare === 'less_than') hit = v < rule.threshold;
+      else if(rule.compare === 'is_false') hit = v === 0;
+      if(hit){
+        score -= rule.points;
+        deductions.push({points: rule.points, label: rule.label, note: rule.note || ''});
+      }
+    });
 
-  // Price vs target
-  if(price > targetPrice*1.1) flags.push(`Price ${fmt$(price)} is ${((price/targetPrice-1)*100).toFixed(0)}% above your target — negotiate`);
-  if(price/sqft > 200) flags.push(`Above $200/sqft — check comps in the same ZIP`);
+    /* -- capital expenses: aging systems with a bill attached -- */
+    const ages = {roof, hvac};
+    R.capital_expenses.forEach(item => {
+      const age = ages[item.id];
+      if(age === null || age === undefined) return;
+      let points = 0, tier = '';
+      if(age >= item.overdue_age){ points = item.overdue_points; tier = 'overdue'; }
+      else if(age >= item.due_age){ points = item.due_points; tier = 'due'; }
+      if(!points) return;
+      const band = sqft === null
+        ? item.unknown_sqft
+        : (item.bands.find(b => b.max_sqft !== null && sqft <= b.max_sqft) || item.bands[item.bands.length - 1]);
+      score -= points;
+      capex.push({points, component: item.component, tier, low: band.low, high: band.high, src: item.source_url});
+    });
+  }
 
-  // Recommendations
-  flags.push('Verify SC 4% owner-occupied residence classification is filed by Jan 15');
-  flags.push('Pull tax history vs. estimated post-purchase bill (assessment resets to sale price)');
-  flags.push('Get an actual insurance quote before finalizing the offer');
-  flags.push('Pull permit history at Spartanburg County GIS');
+  score = Math.max(0, Math.min(100, score));
 
-  score = Math.max(0, Math.min(100,score));
-  document.getElementById('p-score').textContent = score;
-  document.getElementById('p-score').style.color = score>=75?'var(--green)':score>=50?'var(--gold)':'var(--red)';
-  document.getElementById('p-score-d').textContent = score>=75?'Strong fit · take to inspection':score>=50?'Watch · negotiate or wait':'Pass · does not fit your rules';
-  document.getElementById('p-flags').innerHTML = flags.map(f=>`<li>${f}</li>`).join('');
+  /* -- unknown facts cap: silence must not read as perfection -- */
+  const UNKNOWN_LABELS = {sqft: 'heated square footage', beds: 'bedroom count', baths: 'bathroom count'};
+  Object.keys(UNKNOWN_LABELS).forEach(k => { if(facts[k] === null) unknown.push(UNKNOWN_LABELS[k]); });
+  let capped = false;
+  if(unknown.length && !hardFails.length){
+    const cap = R.verdict.take_min - 1;
+    if(score > cap){ score = cap; capped = true; }   // one-directional, only ever lowers
+  }
+
+  /* -- verdict bands, last -- */
+  let verdict = 'PASS';
+  if(hardFails.length) verdict = 'PASS';
+  else if(score >= R.verdict.take_min) verdict = 'TAKE';
+  else if(score >= R.verdict.watch_min) verdict = 'WATCH';
+
+  /* -- caveats: flagged, never scored -- */
+  if(capped){
+    caveats.push(`Score capped at ${R.verdict.take_min - 1} because ${unknown.join(', ')} ${unknown.length===1?'is':'are'} unknown. Fill those in and re-score — the cap only lowers a score, never raises one.`);
+  } else if(unknown.length){
+    caveats.push(`${unknown.join(', ')} unknown, so any related deduction is unapplied rather than passed.`);
+  }
+  if(price && targetPrice && price > targetPrice * (1 + R.caveats.max_price_over_target_pct)){
+    caveats.push(`${fmt$(price)} is ${((price/targetPrice-1)*100).toFixed(0)}% above your ${fmt$(targetPrice)} target — negotiate or widen the budget.`);
+  }
+  if(price && sqft && price/sqft > R.caveats.max_price_per_sqft){
+    caveats.push(`Above $${R.caveats.max_price_per_sqft}/sqft — check comps in the same ZIP.`);
+  }
+
+  /* -- render -- */
+  const el = document.getElementById('p-score');
+  el.textContent = score;
+  el.style.color = verdict==='TAKE' ? 'var(--green)' : verdict==='WATCH' ? 'var(--gold)' : 'var(--red)';
+  document.getElementById('p-score-d').innerHTML =
+    `<span class="chip ${verdict.toLowerCase()}">${verdict}</span> ` +
+    (verdict==='TAKE' ? 'Strong fit · take to inspection'
+      : verdict==='WATCH' ? 'Watch · negotiate or verify'
+      : hardFails.length ? 'Deal-breaker · not a candidate at any price'
+      : 'Pass · does not fit your rules');
+
+  const rows = [];
+  hardFails.forEach(f => rows.push(`<li><b style="color:var(--red)">DEAL-BREAKER</b> ${f}</li>`));
+  deductions.forEach(d => rows.push(
+    `<li><b style="color:var(--gold)">−${d.points}</b> ${d.label}${d.note?` <span style="color:var(--text-faint)">${d.note}</span>`:''}</li>`));
+  capex.forEach(c => rows.push(
+    `<li><b style="color:var(--gold)">−${c.points}</b> ${c.component} (${c.tier}) — estimated ${fmt$(c.low)}–${fmt$(c.high)} · <a href="${c.src}" target="_blank" style="color:var(--text-faint)">source</a></li>`));
+  if(capex.length){
+    const lo = capex.reduce((s,c)=>s+c.low,0), hi = capex.reduce((s,c)=>s+c.high,0);
+    rows.push(`<li><b>Near-term capital total</b> ${fmt$(lo)}–${fmt$(hi)} — get contractor quotes and negotiate a credit</li>`);
+  }
+  caveats.forEach(c => rows.push(`<li><span style="color:var(--text-faint)">note</span> ${c}</li>`));
+  if(!rows.length) rows.push('<li>No deductions. Verify the facts above against the county record before writing an offer.</li>');
+
+  // Always-on pre-offer checks. Not scored, and not optional.
+  rows.push('<li><span style="color:var(--text-faint)">before offer</span> Confirm the SC 4% owner-occupied classification is filed by Jan 15 — the assessment ratio resets on sale</li>');
+  rows.push('<li><span style="color:var(--text-faint)">before offer</span> Compare the seller\'s tax history against the estimated post-purchase bill</li>');
+  rows.push('<li><span style="color:var(--text-faint)">before offer</span> Get a real insurance quote; the model uses a statewide average</li>');
+  rows.push('<li><span style="color:var(--text-faint)">before offer</span> Call the ISP with the exact street address — FCC data is census-block precision</li>');
+
+  document.getElementById('p-flags').innerHTML = rows.join('');
 }
 
 /* ---------------- RUNWAY ---------------- */

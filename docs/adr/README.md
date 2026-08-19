@@ -13,3 +13,4 @@ Format is deliberately lightweight — context, decision, alternatives, conseque
 | [0005](0005-capital-expenses-deduct-and-unknowns-pin.md) | Aging roof/HVAC deduct with a dollar range; unknown hard-fail inputs pin the score to 50 | Accepted |
 | [0006](0006-source-station-contract.md) | Every external source is a station with one failure contract: never raise, never guess | Accepted |
 | [0007](0007-http-service-container-and-split-ci.md) | CLI, batch, and HTTP are three thin doors on one engine; CI splits offline-per-push from live-nightly | Accepted |
+| [0008](0008-browser-rules-are-compiled-not-rewritten.md) | The static page is the fourth door; its scoring rules are compiled from the profile, never hand-written | Accepted |

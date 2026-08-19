@@ -122,6 +122,9 @@ textarea{width:100%;min-height:120px;background:var(--surface-2);border:1px soli
 
 .footer-note{color:var(--text-faint);font-size:var(--text-xs);margin-top:var(--space-6);border-top:1px solid var(--divider);padding-top:var(--space-4)}
 .footer-note a{color:var(--text-muted)}
+/* No global anchor rule existed, so any new link fell back to the browser's default blue —
+   which is nearly unreadable on the dark surface. Set once here rather than inline per link. */
+#engine a{color:var(--primary)}
 
 @media (max-width: 900px){
   html,body{overflow:auto}
@@ -158,6 +161,7 @@ textarea{width:100%;min-height:120px;background:var(--surface-2);border:1px soli
       <a href="#property">Property scorer</a>
       <a href="#runway">Cash-flow runway</a>
       <a href="#decisions">Decisions</a>
+      <a href="#engine">Run the full engine</a>
     </nav>
 
     <div class="side-h">Global inputs</div>
@@ -294,25 +298,25 @@ textarea{width:100%;min-height:120px;background:var(--surface-2);border:1px soli
     <!-- PROPERTY SCORER -->
     <section id="property">
       <h2>Property scorer</h2>
-      <div class="sub">Paste a listing address + a few facts. Get a 0–100 fit score against your must-haves and a red-flag checklist.</div>
+      <div class="sub">Paste a listing address + a few facts. Get a 0–100 fit score against your must-haves and a red-flag checklist. Thresholds and weights are compiled from <code>buyer_profile.toml</code>, the same file the Python engine reads — change the profile, rebuild, and this page changes with it. <b>Leave a field blank when you genuinely do not know it</b>; blank is treated as unknown and caps the score below TAKE rather than scoring it as if the answer were good.</div>
       <div class="grid grid-2">
         <div>
           <div class="slider-wrap"><label>Address / MLS #</label><input id="p-addr" type="text" placeholder="123 Homelab Ln, Boiling Springs, SC 29316"/></div>
           <div class="slider-wrap"><label>Price</label><input id="p-price" type="number" value="315000"/></div>
-          <div class="slider-wrap"><label>Beds / Baths</label><input id="p-bb" type="text" value="3 / 2"/></div>
-          <div class="slider-wrap"><label>Square feet</label><input id="p-sqft" type="number" value="1650"/></div>
-          <div class="slider-wrap"><label>HOA / mo</label><input id="p-hoa" type="number" value="0"/></div>
+          <div class="slider-wrap"><label>Beds / Baths <span style="color:var(--text-faint)">— blank = unknown</span></label><input id="p-bb" type="text" value="3 / 2"/></div>
+          <div class="slider-wrap"><label>Square feet <span style="color:var(--text-faint)">— blank = unknown</span></label><input id="p-sqft" type="number" value="1650"/></div>
+          <div class="slider-wrap"><label>HOA / mo <span style="color:var(--text-faint)">— over $100 deducts, does not disqualify</span></label><input id="p-hoa" type="number" value="0"/></div>
           <div class="slider-wrap"><label>Garage bays</label><input id="p-gar" type="number" value="2"/></div>
           <div class="slider-wrap"><label>Fiber available (0/1)</label><input id="p-fib" type="number" min="0" max="1" value="1"/></div>
-          <div class="slider-wrap"><label>Est. commute (min)</label><input id="p-com" type="number" value="15"/></div>
+          <div class="slider-wrap"><label>Est. commute (min) <span style="color:var(--text-faint)">— to Spartanburg Medical Center, 6:30–7am arrival</span></label><input id="p-com" type="number" value="15"/></div>
           <div class="slider-wrap"><label>Well/septic (0=city water & sewer)</label><input id="p-sep" type="number" min="0" max="1" value="0"/></div>
           <div class="slider-wrap"><label>In FEMA flood zone (0/1)</label><input id="p-fld" type="number" min="0" max="1" value="0"/></div>
-          <div class="slider-wrap"><label>Roof age (yrs)</label><input id="p-roof" type="number" value="8"/></div>
-          <div class="slider-wrap"><label>HVAC age (yrs)</label><input id="p-hvac" type="number" value="9"/></div>
+          <div class="slider-wrap"><label>Roof age (yrs) <span style="color:var(--text-faint)">— 15+ deducts, 20+ deducts more</span></label><input id="p-roof" type="number" value="8"/></div>
+          <div class="slider-wrap"><label>HVAC age (yrs) <span style="color:var(--text-faint)">— 12+ deducts, 18+ deducts more</span></label><input id="p-hvac" type="number" value="9"/></div>
         </div>
         <div>
           <div class="kpi" style="margin-bottom:12px"><div class="k">Fit score</div><div class="v numeric" id="p-score">–</div><div class="d" id="p-score-d">Weighted must-haves × deal-breakers</div></div>
-          <div style="font-family:var(--font-display);font-weight:600;margin-bottom:6px">Red-flag checklist</div>
+          <div style="font-family:var(--font-display);font-weight:600;margin-bottom:6px">Why it scored that way</div>
           <ul class="checklist" id="p-flags"></ul>
         </div>
       </div>
@@ -346,8 +350,54 @@ textarea{width:100%;min-height:120px;background:var(--surface-2);border:1px soli
       <div class="callout"><b>Discipline note.</b> Protecting capital comes first. Your household has strong income and a specific, near-in-time window. The edge is not predicting price or rate — it is choosing a submarket that fits your commute + fiber + schools rules, and moving decisively when supply and time-on-market look this favorable.</div>
     </section>
 
+    <!-- ENGINE -->
+    <section id="engine">
+      <h2>Run the full engine</h2>
+      <div class="sub">This page is a <b>snapshot</b> on purpose — static files, no backend, no keys, works offline. The analyzer behind it does the part a snapshot cannot: it goes and looks things up.</div>
+
+      <div class="grid grid-2">
+        <div>
+          <div style="font-family:var(--font-display);font-weight:600;margin-bottom:6px">What this page does</div>
+          <ul class="list">
+            <li>Scores facts <b>you</b> type in, against thresholds compiled from <code>buyer_profile.toml</code></li>
+            <li>Applies deductions, capital-expense tiers, the unknown-facts cap, and the verdict bands in the same order the engine does</li>
+            <li>Models affordability, rent-vs-buy, and down-payment runway from the sliders</li>
+          </ul>
+        </div>
+        <div>
+          <div style="font-family:var(--font-display);font-weight:600;margin-bottom:6px">What only the engine does</div>
+          <ul class="list">
+            <li>Geocodes the address, then pulls the county parcel record, FEMA flood layer, and live drive time to Spartanburg Medical Center — so hard fails are <b>looked up</b>, not typed</li>
+            <li>Real property-tax millage with the SC 4% / 6% assessment-ratio reset on sale</li>
+            <li>Full amortisation, insurance proration, cash-to-close, and three separate maintenance-reserve methods reported side by side rather than averaged</li>
+            <li>Scores a whole CSV shortlist at once and ranks it</li>
+            <li>Says clearly when a source was unreachable instead of quietly guessing</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="callout" style="margin-top:14px">
+        <b>Three doors, one engine.</b> A CLI, a batch runner, and an HTTP API all call the same scoring core — they cannot disagree about a house. This page is the fourth door, and it is the one that can't import Python, so its rules are <i>compiled</i> out of the profile by <code>tools/build_snapshot.py</code> and a CI check fails the build if the two ever drift apart again.
+      </div>
+
+      <div style="font-family:var(--font-display);font-weight:600;margin:16px 0 6px">Run it locally</div>
+      <pre style="background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:12px;overflow-x:auto;font-size:var(--text-xs);line-height:1.7"><code>git clone https://github.com/flux1618/home-buying-dashboard
+cd home-buying-dashboard
+
+# one address, full report
+pip install -e '.[api]'
+python -m analyzer.cli "606 Andre Ct, Spartanburg, SC 29301" 268000 --roof-age 17 --hvac-age 14
+
+# a whole shortlist, ranked
+python -m analyzer.batch examples/shortlist.csv
+
+# or the API in a container, bound to localhost only
+docker compose up --build     # then http://127.0.0.1:8000/docs</code></pre>
+      <div style="font-size:var(--text-xs);color:var(--text-muted);margin-top:8px">Source, architecture decision records, and known limitations: <a href="https://github.com/flux1618/home-buying-dashboard" target="_blank" style="color:var(--primary)">github.com/flux1618/home-buying-dashboard</a></div>
+    </section>
+
     <div class="footer-note">
-      Not financial advice. Every value on this page traces to the linked sources above. Estimates (e.g. typical millage, generic fiber coverage, forecast paths) are labeled and should be verified on a specific TMS or address before you commit. Portfolio demonstration · commute anchor: downtown Spartanburg SC · purchase window: Q2–Q3 2027.
+      Not financial advice. Every value on this page traces to the linked sources above. Estimates (e.g. typical millage, generic fiber coverage, forecast paths) are labeled and should be verified on a specific TMS or address before you commit. Portfolio demonstration · commute anchor: Spartanburg Medical Center, 101 E Wood St · purchase window: Q2–Q3 2027.
     </div>
   </main>
 </div>

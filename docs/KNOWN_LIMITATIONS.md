@@ -191,6 +191,46 @@ that regression caught.
 
 ---
 
+## The public page scores only what you type, and can look nothing up
+
+The snapshot at `index.html` has no backend by design (ADR 0001), so it cannot geocode an
+address, read the county parcel record, query the FEMA flood layer, or measure a drive time.
+Everything its scorer knows, a visitor typed in. That makes its hard-fail checks as reliable
+as the person filling the form — the engine *looks up* flood zone, water and sewer, and
+commute; the page takes your word for them.
+
+It is also missing the entire financial model. No millage, no 4%/6% assessment reset, no
+amortisation, no insurance proration, no cash-to-close, and none of the three
+maintenance-reserve methods. The sliders model affordability generically; only the local
+engine prices a specific parcel. The page says this in its "Run the full engine" section
+rather than leaving it to be discovered.
+
+## The page's rules are generated, so a stale snapshot is possible
+
+The browser cannot import the Python engine, so its thresholds and weights are compiled from
+`buyer_profile.toml` into `data.json` by `tools/build_snapshot.py` (ADR 0008). Edit the profile
+without rebuilding and the published page keeps answering with the old numbers.
+
+This is not hypothetical. It is what happened before the compiler existed: the hand-written
+JavaScript treated an HOA over $100/mo as disqualifying while the engine deducted 25 points,
+and ignored roof and HVAC age entirely while the engine deducted up to 57. On 606 Andre Ct the
+page showed a confident TAKE where the engine said 52 WATCH, and a house with a $150/mo HOA and
+nothing else wrong was rejected outright by the page and scored 75 TAKE by the engine.
+
+`python tools/build_snapshot.py --check` now runs in CI and fails the build when the two
+diverge, so the drift is loud rather than silent. The residual risk is a page published from a
+working tree that was never pushed.
+
+## Only a subset of the rules is expressible in the browser
+
+The compiled rule block holds threshold comparisons, capex tiers, caveat limits, and verdict
+bands — the parts that are genuinely declarative. Anything requiring real computation stays in
+Python. If a future rule cannot be written as a comparison against a number, the page will not
+be able to apply it, and the correct response is to point the user at the local engine rather
+than to grow the compiler into a second implementation.
+
+---
+
 ## Not financial advice
 
 A personal decision-support tool. Every value is real and cited, and none of it is investment advice. Verify against a specific TMS or address, with a licensed inspector, lender, and insurer, before committing capital.

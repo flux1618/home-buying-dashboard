@@ -151,6 +151,34 @@ jobs:
             exit 1
           fi
 
+  snapshot-matches-engine:
+    name: static page agrees with the engine
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - run: pip install -e '.[dev]'
+
+      - name: data.json is not stale
+        # The static page cannot import Python, so its rules are compiled out of
+        # buyer_profile.toml. The failure mode this guards is mundane and was already
+        # real: someone tunes a threshold in the profile, the engine picks it up
+        # immediately, and the published page keeps answering with the old number.
+        #
+        # Before this existed the page treated an HOA over $100/mo as disqualifying while
+        # the engine deducted 25, and ignored roof and HVAC age entirely while the engine
+        # deducted up to 57. On one real address that was a TAKE on the page and a WATCH
+        # from the engine. Two implementations of the same rules always drift; the fix is
+        # to have one implementation and generate the other.
+        run: python tools/build_snapshot.py --check
+
+      - name: The page reads the compiled rules rather than restating them
+        run: pytest tests/test_snapshot_rules.py -v
+
   container:
     name: container builds for amd64 and arm64
     runs-on: ubuntu-latest
