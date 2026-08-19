@@ -120,17 +120,16 @@ My personality is defined as someone who thinks deeply about self improvement an
 That's a repeatable workflow for me, that is open to change, but has utility when it comes to things like:  vendor selection, tool choice, migration planning, or any decision where there is a high noise to signal ratio.
 
 ## To Do
-1. Amortization calculator
-2.  Actual pipeline with normalized data storage on repo
-3. Regenerating nightly data in data/parcels.parquet with Github actions. county REST service, return tax pin, assessed value, tax district, school attendance zone, and last sale
-4. rate sensitivity band that plot at the same houses with 5.0% to 7.5% with 30 year at 6.5% that includes  oscillation within a few base points weekly, defining the payment delta to inform buy or wait decision
-5. Watcher to push notifications
-6. Natural language evaluation to query on tool
-7. Market velocity
-8. open API for spartanburg area GIS, that includes parcels, assessed values, service districts, and voting/school boundaries
-9. FRED  MORTGAGE30US , the Freddie Mac 30-year average, weekly each Thursday, free API key
+1.  Actual pipeline with normalized data storage on repo
+2. Regenerating nightly data in data/parcels.parquet with Github actions. county REST service, return tax pin, assessed value, tax district, school attendance zone, and last sale
+3. rate sensitivity band that plot at the same houses with 5.0% to 7.5% with 30 year at 6.5% that includes  oscillation within a few base points weekly, defining the payment delta to inform buy or wait decision
+4. Watcher to push notifications
+5. Natural language evaluation to query on tool
+6. Market velocity
+7. open API for spartanburg area GIS, that includes parcels, assessed values, service districts, and voting/school boundaries
+8. FRED  MORTGAGE30US , the Freddie Mac 30-year average, weekly each Thursday, free API key
 
-Built and removed from this list: the scenario solver ([ADR 0010](docs/adr/0010-inverse-affordability-is-two-answers.md)) and the SC 4% vs 6% assessment ratio with the school operating millage removed for legal residence.
+Built and removed from this list: the amortization schedule ([ADR 0012](docs/adr/0012-money-is-integer-cents-in-the-schedule.md)), the scenario solver ([ADR 0010](docs/adr/0010-inverse-affordability-is-two-answers.md)), and the SC 4% vs 6% assessment ratio with the school operating millage removed for legal residence.
 
 
 ## To Do Roadmap
@@ -164,11 +163,11 @@ Goal: Paste an inspection, HOA bylaws and seller disclosure -> structured JSON, 
 
 ### Phase 4 — Ongoing monitoring
 
-1. Amortization calculator and ~~scenario solver~~
+1. ~~Amortization calculator and scenario solver~~ **Done.**
 
 Goal: Be able to put in house with variables for down payment, rate, insurance, HOA dues, fees in, and calculate monthly PITI and max price under a DTI ceiling out.
 
-**Solver done** — max price is bisected over the real cost engine and returns two answers, a lender price and a household price ([ADR 0010](docs/adr/0010-inverse-affordability-is-two-answers.md)). **Amortization schedule not built**: there is a payment formula, not a table of 360 payments.
+Max price is bisected over the real cost engine and returns two answers, a lender price and a household price ([ADR 0010](docs/adr/0010-inverse-affordability-is-two-answers.md)). The schedule counts in integer cents and closes on its term month ([ADR 0012](docs/adr/0012-money-is-integer-cents-in-the-schedule.md)); `--extra-monthly` shows what paying more buys. Principal and interest only — tax, insurance, HOA, and mortgage insurance do not amortize, and the output says so. **No web UI yet** for either.
 
 2. Graphical rate sensitivity band
 

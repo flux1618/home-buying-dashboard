@@ -151,6 +151,38 @@ jobs:
             exit 1
           fi
 
+      - name: The amortization schedule closes on an installed package
+        # Arithmetic invariants, checked against the *installed* package with no working
+        # directory on sys.path. The unit tests assert the same things, but they run with the
+        # repo importable by accident of the current directory, and this repo has already
+        # been bitten twice by code that imports locally and not once installed.
+        #
+        # The two claims are the ones that would embarrass the tool in front of a reader: a
+        # 30-year note has exactly 360 payments, and the principal repaid equals the loan to
+        # the cent. Both were false in the first working version of the loop.
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from analyzer.core.amortization import schedule
+          from analyzer.core.profile import load_profile
+
+          p = load_profile()
+          loan = p.target_price - p.down_payment
+          s = schedule(loan, p.mortgage_rate, p.loan_term_months)
+
+          assert s.months_to_payoff == p.loan_term_months, s.months_to_payoff
+          assert s.payments[-1].balance == 0.0, s.payments[-1].balance
+          repaid = round(sum(x.principal + x.extra for x in s.payments), 2)
+          assert repaid == round(loan, 2), (repaid, loan)
+
+          e = schedule(loan, p.mortgage_rate, p.loan_term_months, extra_monthly=200)
+          assert e.months_to_payoff < s.months_to_payoff
+          assert e.payments[-1].balance == 0.0
+          assert round(e.interest_saved, 2) == round(s.total_interest - e.total_interest, 2)
+
+          print(f"{s.months_to_payoff} payments, ${s.total_interest:,.2f} interest, closes at 0")
+          PY
+
       - name: The ledger survives a round trip on a clean machine
         # An end-to-end check of Phase 3 that no unit test can make: this runs against an
         # *installed* package with no working directory on sys.path, in a container with no

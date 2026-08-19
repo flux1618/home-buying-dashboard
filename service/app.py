@@ -39,6 +39,7 @@ from analyzer import batch
 from analyzer.core.profile import BuyerProfile, load_profile
 from ledger import Ledger, connect
 from ledger.repo import JOURNAL_KINDS, STATUSES, LedgerError, PropertyNotFound
+from analyzer.core.amortization import schedule as build_schedule
 from analyzer.core.analyze import ENGINE_VERSION
 from analyzer.core.cost import solve_max_price
 from analyzer.pipeline import PipelineAborted, run
@@ -106,6 +107,39 @@ class MaxPriceRequest(BaseModel):
     year_built: int | None = Field(default=None, ge=1700, le=2100)
     hoa_monthly: float = Field(default=0.0, ge=0, le=10_000)
     owner_occupied: bool = True
+
+
+class AmortizationRequest(BaseModel):
+    """Every field optional, defaulting to the profile's own loan.
+
+    A caller with no arguments gets the schedule for the house the tool is actually aimed
+    at, which makes this endpoint useful for a sanity check as well as a what-if.
+    """
+
+    model_config = {"extra": "forbid"}
+
+    # Price or loan amount, not both. A caller who sends both has two different beliefs
+    # about the down payment and there is no safe way to guess which one they meant, so
+    # this rejects instead of silently picking one.
+    price: float | None = Field(default=None, gt=0, le=100_000_000)
+    loan_amount: float | None = Field(default=None, gt=0, le=100_000_000)
+
+    # Percent, matching MaxPriceRequest.dti_pct. `rate_pct=6.67` over HTTP is unambiguous
+    # in a way that 0.0667 is not, and the core rejects fractions above 1 as a backstop.
+    rate_pct: float | None = Field(default=None, gt=0, le=100)
+    term_months: int | None = Field(default=None, ge=1, le=600)
+    extra_monthly: float = Field(default=0.0, ge=0, le=1_000_000)
+
+    # 360 rows is roughly 40 KB of JSON. Useful for plotting a curve, wasteful for a
+    # summary, so the caller says which they want and the default is the cheap one.
+    include_payments: bool = False
+
+    @field_validator("loan_amount")
+    @classmethod
+    def _not_both(cls, v, info):
+        if v is not None and info.data.get("price") is not None:
+            raise ValueError("send price or loan_amount, not both")
+        return v
 
 
 class StatusRequest(BaseModel):
@@ -315,6 +349,65 @@ def create_app() -> FastAPI:
                 "The down payment is held fixed from the profile, so a higher solved "
                 "price means a smaller percentage down. Check the notes for a mortgage "
                 "insurance warning."
+            ),
+        }
+
+    @app.post("/amortization", tags=["analysis"])
+    def amortization(payload: Annotated[AmortizationRequest, Body()]) -> dict[str, Any]:
+        """Where the money goes, month by month.
+
+        Pure arithmetic over the profile, like /max-price: no address, no network, no
+        stations, so it answers instantly and works when every source is offline.
+
+        This is principal and interest only. Taxes, insurance, HOA, and mortgage insurance
+        do not amortize -- paying extra principal does not shorten them -- so every figure
+        here is smaller than the PITI figure from /analyze. The payload carries `excludes`
+        so a consumer rendering both side by side cannot conflate them.
+        """
+        p = profile()
+
+        if payload.loan_amount is not None:
+            loan = payload.loan_amount
+            basis = "loan_amount as given"
+        else:
+            price = payload.price if payload.price is not None else p.target_price
+            loan = price - p.down_payment
+            basis = f"price ${price:,.0f} less the profile down payment ${p.down_payment:,.0f}"
+            if loan <= 0:
+                # 422, not 500. The arithmetic is fine; the request does not describe a loan.
+                raise HTTPException(
+                    status_code=422,
+                    detail=(
+                        f"the profile down payment ${p.down_payment:,.0f} covers the whole "
+                        f"price ${price:,.0f}, so there is nothing to amortize"
+                    ),
+                )
+
+        rate = p.mortgage_rate if payload.rate_pct is None else payload.rate_pct / 100.0
+        term = payload.term_months or p.loan_term_months
+
+        try:
+            result = build_schedule(loan, rate, term, extra_monthly=payload.extra_monthly)
+        except ValueError as exc:
+            # The core raises on inputs that cannot amortize -- a payment that never covers
+            # the interest, for instance. That is the caller's input, so it is a 422 and the
+            # core's message is passed through, because it names the actual numbers.
+            raise HTTPException(status_code=422, detail=str(exc)) from None
+
+        return {
+            "amortization": result.to_dict(include_payments=payload.include_payments),
+            "engine_version": ENGINE_VERSION,
+            "loan_basis": basis,
+            "assumptions": {
+                "down_payment": p.down_payment,
+                "mortgage_rate": rate,
+                "loan_term_months": term,
+                "rate_source": "profile" if payload.rate_pct is None else "request",
+            },
+            "note": (
+                "Principal and interest only. Property tax, insurance, HOA dues, and "
+                "mortgage insurance are not part of a schedule and do not shrink when you "
+                "pay extra principal, so this is a smaller number than PITI from /analyze."
             ),
         }
 

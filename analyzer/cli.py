@@ -11,6 +11,8 @@ import sys
 
 from datetime import datetime
 
+from .core.amortization import schedule as build_schedule
+
 # Imported as `solve_max_price` rather than the module, because `render` already binds a
 # local named `cost` from the document and shadowing the module there would be a trap.
 from .core.cost import solve_max_price
@@ -120,6 +122,78 @@ def render_max_price(solution: dict | None) -> None:
     print(f"    Household basis  ${household:>10,.0f}   {DIM}PITI + maintenance reserve{OFF}")
     for note in solution["notes"]:
         print(f"    {DIM}· {note}{OFF}")
+
+
+def _money(value: float) -> str:
+    """Dollars with the sign attached, so right-aligning a column keeps them together."""
+    return f"${value:,.0f}"
+
+
+def render_amortization(amort: dict | None) -> None:
+    """The year table, not the 360 rows.
+
+    Nobody reads 360 lines in a terminal, and the thing worth seeing is how little the
+    balance moves early on. Twelve-month rollups make that obvious in one screen. The full
+    row set is still in the JSON output and over HTTP for anyone who wants to plot it.
+
+    Every figure here is principal and interest only, which is printed rather than assumed:
+    it is a smaller number than the PITI line a few inches above it, and a reader who
+    mistakes one for the other underestimates the real monthly cost by hundreds of dollars.
+    """
+    if not amort:
+        return
+
+    print(f"\n  {BOLD}Amortization{OFF}  {DIM}principal and interest only{OFF}")
+    print(
+        f"    ${amort['loan_amount']:,.0f} at {amort['annual_rate'] * 100:.2f}% "
+        f"over {amort['term_months'] // 12} years"
+    )
+
+    extra = amort["extra_monthly"]
+    if extra:
+        print(
+            f"    Payment  ${amort['scheduled_payment']:,.2f}"
+            f" + ${extra:,.0f} extra = ${amort['scheduled_payment'] + extra:,.2f}"
+        )
+    else:
+        print(f"    Payment  ${amort['scheduled_payment']:,.2f}")
+
+    print(f"    Interest over the life   {_money(amort['total_interest']):>12}")
+    print(f"    Total paid               {_money(amort['total_paid']):>12}")
+
+    if extra:
+        years = amort["months_saved"] // 12
+        months = amort["months_saved"] % 12
+        span = f"{years}y {months}m" if years else f"{months}m"
+        print(
+            f"    {GREEN}The extra saves ${amort['interest_saved']:,.0f} "
+            f"and ends it {span} early{OFF}"
+        )
+
+    # The single most surprising number in the table, so it gets its own line rather than
+    # being left for the reader to find by scanning the columns.
+    if amort["crossover_month"]:
+        cm = amort["crossover_month"]
+        basis = " including the extra" if extra else ""
+        print(
+            f"    {DIM}Principal first exceeds interest at payment {cm} "
+            f"(year {cm / 12:.1f}){basis}{OFF}"
+        )
+
+    print(f"\n    {DIM}Year   Interest    Principal      Balance{OFF}")
+    for y in amort["years"]:
+        # Every fifth year, the first, and the last. A 30-row table in a terminal is a wall;
+        # this keeps the shape of the curve visible without printing all of it.
+        if y["year"] % 5 and y["year"] != 1 and y is not amort["years"][-1]:
+            continue
+        n = y["payments"]
+        partial = "" if n == 12 else f"  {DIM}({n} payment{'' if n == 1 else 's'}){OFF}"
+        print(
+            f"    {y['year']:>4}  {_money(y['interest']):>10}  {_money(y['principal']):>11}"
+            f"  {_money(y['ending_balance']):>12}{partial}"
+        )
+
+    print(f"    {DIM}Excludes {', '.join(amort['excludes'])}.{OFF}")
 
 
 def _street_of(address: str) -> str:
@@ -293,6 +367,18 @@ def main(argv: list[str] | None = None) -> int:
         metavar="PATH",
         help="ledger database file; defaults to $HBA_DATA_DIR or the XDG data directory",
     )
+    parser.add_argument(
+        "--amortize",
+        action="store_true",
+        help="show the amortization schedule for the loan this price implies",
+    )
+    parser.add_argument(
+        "--extra-monthly",
+        type=float,
+        default=0.0,
+        # The reason anyone opens an amortization table: what does paying a bit more do.
+        help="extra principal per month, to see what it saves (implies --amortize)",
+    )
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args(argv)
 
@@ -326,6 +412,27 @@ def main(argv: list[str] | None = None) -> int:
             current_year=datetime.now().year,
         ).to_dict()
 
+    if args.amortize or args.extra_monthly:
+        # The loan, not the price. Down payment comes from the profile, so this schedule is
+        # the one that goes with the PITI figure printed above it rather than a generic
+        # illustration -- and the loan is derived from the price actually passed in.
+        loan = args.price - profile.down_payment
+        if loan <= 0:
+            print(
+                f"{DIM}No schedule: the down payment covers the whole price.{OFF}",
+                file=sys.stderr,
+            )
+        else:
+            # include_payments=False. 360 rows would bury the analysis document, and the
+            # annual rollup plus the totals is what a person reads. The HTTP door returns
+            # the full rows for anyone who wants to plot them.
+            result.document["amortization"] = build_schedule(
+                loan,
+                profile.mortgage_rate,
+                profile.loan_term_months,
+                extra_monthly=args.extra_monthly,
+            ).to_dict(include_payments=False)
+
     if args.save:
         # Imported here, not at module scope. The ledger is the only part of this CLI that
         # touches a filesystem outside the cache, and an unconditional import would mean a
@@ -353,6 +460,7 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps(result.document, indent=2))
     else:
         render(result.document)
+        render_amortization(result.document.get("amortization"))
         if args.save:
             render_ledger(result.document["ledger"])
     return 0

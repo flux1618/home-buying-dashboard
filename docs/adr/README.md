@@ -17,3 +17,4 @@ Format is deliberately lightweight — context, decision, alternatives, conseque
 | [0009](0009-hazard-risk-is-a-caveat.md) | FEMA National Risk Index reports percentiles as caveats and never deducts points; hazards are profile configuration | Accepted |
 | [0010](0010-inverse-affordability-is-two-answers.md) | Max-price is bisected over the real cost engine, returns a lender and a household price, and the browser copy is held honest by a parity test | Accepted |
 | [0011](0011-ledger-is-append-only-and-separate.md) | Saved properties live in a separate append-only SQLite ledger; a score delta is only reported when the engine version and profile fingerprint match | Accepted |
+| [0012](0012-money-is-integer-cents-in-the-schedule.md) | The amortization schedule holds money as integer cents, closes the loan on its term month, and states in its payload that it excludes tax, insurance, HOA, and mortgage insurance | Accepted |

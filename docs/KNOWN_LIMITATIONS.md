@@ -350,6 +350,58 @@ different code and comparing them would be arithmetic on incompatible units.
 
 ---
 
+## The amortization schedule is principal and interest, and mortgage insurance is still unmodeled
+
+Every figure the schedule reports is smaller than the PITI figure for the same house. On the
+target loan the schedule says $1,151.49 and `cost.compute` says $1,652, and both are correct
+about different things: tax, insurance, HOA dues, and mortgage insurance do not amortize.
+
+That is easy to misread, so the payload carries an `excludes` list naming all four, the CLI
+prints "principal and interest only" in the header and repeats the list in the footer, and
+the HTTP response names PITI in its `note`.
+
+Mortgage insurance is the one most likely to be assumed present. It is modeled nowhere in
+this project. A schedule is the natural place to add PMI drop-off, since the LTV at every
+month is right there in the balance column, and that is not built. Read the payment as the
+loan payment, not the housing cost. See [ADR 0012](adr/0012-money-is-integer-cents-in-the-schedule.md).
+
+## Extra payments are monthly only, and are assumed to start immediately and never stop
+
+`extra_monthly` applies the same extra principal every month from payment 1 until the loan
+closes. Real prepayment is lumpier than that: a tax refund in April, nothing for two years,
+a bonus in December.
+
+A one-time lump sum at a given month is not supported. The loop would take a per-month map
+without changing shape, so this is a scope call rather than a constraint — the question a
+buyer actually asks is "what does another $200 a month do", and a `dict[int, float]` in the
+request schema is a worse door for that question.
+
+So `months_saved` and `interest_saved` describe a discipline nobody keeps perfectly. They are
+the ceiling on what the extra buys, not a forecast. They are at least measured rather than
+estimated: the comparison runs the same loop again with the extra set to zero, so it cannot
+be right about a loan this module would not produce.
+
+## The schedule assumes a fixed rate and no recast, refinance, or escrow change
+
+Thirty years of identical payments. No ARM adjustment, no refinance, no recast after a large
+prepayment, no insurance premium increase, no reassessment after a sale.
+
+The rate assumption is the honest one for a 30-year fixed, which is what the profile models.
+The others are not modeling gaps so much as a statement about what a schedule is: a
+projection of one loan under one set of terms held still. Anything that changes the terms
+starts a new schedule.
+
+## The static page still has no amortization view
+
+Same gap as the ledger. The schedule is reachable from `python -m analyzer.cli --amortize`
+and from `POST /amortization`, and the committed snapshot at the public URL knows nothing
+about it.
+
+Under [ADR 0008](adr/0008-browser-rules-are-compiled-not-rewritten.md) a browser version
+would have to be compiled from `analyzer/core/amortization.py` rather than hand-ported, or it
+becomes a second implementation of the same arithmetic — which the page's `solveMaxPrice`
+already is, and that one needs a parity test to stay honest.
+
 ## Not financial advice
 
 A personal decision-support tool. Every value is real and cited, and none of it is investment advice. Verify against a specific TMS or address, with a licensed inspector, lender, and insurer, before committing capital.
