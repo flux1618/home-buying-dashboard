@@ -32,7 +32,36 @@ Only `address` is required. Everything else is optional; missing fields produce 
 
 ## The six stations
 
-Each station is an independent adapter in `sources/`. Each one can fail without failing the analysis.
+Each station is an independent adapter in `sources/`. Each one can fail without failing the analysis. The failure contract they share is recorded in [ADR 0006](../adr/0006-source-station-contract.md).
+
+### As built: the endpoints, and which ones actually work
+
+What follows was verified against live endpoints on 2026-08-19, not read off documentation. Two of the six intended sources do not work as designed, which is why the degradation contract exists.
+
+| Station | Endpoint | Status |
+|---|---|---|
+| Geocode | `geocoding.geo.census.gov/geocoder/geographies/onelineaddress` | Works. Returns coordinates, matched address, 15-digit block GEOID, county GEOID |
+| Geocode fallback | `nominatim.openstreetmap.org/search` | Works. Coordinates only, throttled to 1 request/second |
+| Parcel (authoritative) | `maps.spartanburgcounty.org/server/rest/services/...` | **Fails** — `SSL: CERTIFICATE_VERIFY_FAILED`, incomplete certificate chain |
+| Parcel (fallback) | `services9.arcgis.com/.../Parcel_and_CAMA_Feb_1_2021/FeatureServer/0/query` | Works. 29,402 records, 115 fields, **February 2021 vintage** |
+| Flood | `hazards.fema.gov/arcgis/rest/services/public/NFHL/MapServer/28/query` | Works with a simple `x,y` point geometry |
+| Commute | `router.project-osrm.org/route/v1/driving/{lon},{lat};{lon},{lat}` | Works. Free-flow duration in seconds |
+| Broadband | `broadbandmap.fcc.gov` | **Requires a key** — HTTP 401 anonymously, no free tier |
+| Hazard extras | `hazards.fema.gov/nri/api/...` | Unreachable. Not wired in |
+
+Two query details cost real debugging time and are worth recording:
+
+- The FEMA layer accepts the compact `geometry=-81.9766,34.9430` form. The verbose JSON geometry object also works but is unnecessary.
+- The parcel query **must be buffered** (`distance=40&units=esriSRUnit_Meter`). The Census geocoder returns a street-centreline point that for the first test address landed roughly 3×10⁻⁵ degrees *outside* the correct parcel, so a strict intersects query found nothing for a house that plainly exists. The buffer can then return neighbouring lots, so candidates are disambiguated by street number and flagged when none matches.
+
+The CAMA field vocabularies also constrain what can honestly be read:
+
+| Field | Values | Consequence |
+|---|---|---|
+| `Garage` | `CARPORT ATT`, `CARPORT DET`, `GARAGE ATT`, `GARAGE DET`, `GARAGEBSMT`, `NONE` | No bay count exists, so `garage_spaces` is never inferred |
+| `Utility1/2/3` | `ALL PUBLIC`, `GAS`, `PUBLIC SEWER`, `PUBLIC WATER`, `SEPTIC`, `WELL` | Public water alone leaves sewer unknown — and sewer is the hard fail |
+| `PropertyTy` | 39 codes; leading digit `4` or `6` | Reveals the current assessment ratio directly |
+| `LivingArea` | often `0` | Zero means *not recorded*, so it is treated as unknown |
 
 ### 1. Geocode
 

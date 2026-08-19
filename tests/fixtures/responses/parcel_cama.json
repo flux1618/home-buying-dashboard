@@ -1,0 +1,377 @@
+{
+ "objectIdFieldName": "FID",
+ "uniqueIdField": {
+  "name": "FID",
+  "isSystemMaintained": true
+ },
+ "globalIdFieldName": "",
+ "geometryType": "esriGeometryPolygon",
+ "spatialReference": {
+  "wkid": 102100,
+  "latestWkid": 3857
+ },
+ "fields": [
+  {
+   "name": "TAXPIN",
+   "type": "esriFieldTypeString",
+   "alias": "TAXPIN",
+   "sqlType": "sqlTypeNVarchar",
+   "length": 30,
+   "domain": null,
+   "defaultValue": null
+  },
+  {
+   "name": "District",
+   "type": "esriFieldTypeString",
+   "alias": "District",
+   "sqlType": "sqlTypeNVarchar",
+   "length": 4,
+   "domain": null,
+   "defaultValue": null
+  },
+  {
+   "name": "PropertyLo",
+   "type": "esriFieldTypeString",
+   "alias": "PropertyLo",
+   "sqlType": "sqlTypeNVarchar",
+   "length": 75,
+   "domain": null,
+   "defaultValue": null
+  },
+  {
+   "name": "City",
+   "type": "esriFieldTypeString",
+   "alias": "City",
+   "sqlType": "sqlTypeNVarchar",
+   "length": 25,
+   "domain": null,
+   "defaultValue": null
+  },
+  {
+   "name": "Zip",
+   "type": "esriFieldTypeString",
+   "alias": "Zip",
+   "sqlType": "sqlTypeNVarchar",
+   "length": 16,
+   "domain": null,
+   "defaultValue": null
+  },
+  {
+   "name": "YearBuilt",
+   "type": "esriFieldTypeInteger",
+   "alias": "YearBuilt",
+   "sqlType": "sqlTypeInteger",
+   "domain": null,
+   "defaultValue": null
+  },
+  {
+   "name": "LivingArea",
+   "type": "esriFieldTypeDouble",
+   "alias": "LivingArea",
+   "sqlType": "sqlTypeFloat",
+   "domain": null,
+   "defaultValue": null
+  },
+  {
+   "name": "TotalArea",
+   "type": "esriFieldTypeDouble",
+   "alias": "TotalArea",
+   "sqlType": "sqlTypeFloat",
+   "domain": null,
+   "defaultValue": null
+  },
+  {
+   "name": "FullBaths",
+   "type": "esriFieldTypeInteger",
+   "alias": "FullBaths",
+   "sqlType": "sqlTypeInteger",
+   "domain": null,
+   "defaultValue": null
+  },
+  {
+   "name": "HalfBaths",
+   "type": "esriFieldTypeInteger",
+   "alias": "HalfBaths",
+   "sqlType": "sqlTypeInteger",
+   "domain": null,
+   "defaultValue": null
+  },
+  {
+   "name": "BedRooms",
+   "type": "esriFieldTypeInteger",
+   "alias": "BedRooms",
+   "sqlType": "sqlTypeInteger",
+   "domain": null,
+   "defaultValue": null
+  },
+  {
+   "name": "Garage",
+   "type": "esriFieldTypeString",
+   "alias": "Garage",
+   "sqlType": "sqlTypeNVarchar",
+   "length": 50,
+   "domain": null,
+   "defaultValue": null
+  },
+  {
+   "name": "Utility1",
+   "type": "esriFieldTypeString",
+   "alias": "Utility1",
+   "sqlType": "sqlTypeNVarchar",
+   "length": 12,
+   "domain": null,
+   "defaultValue": null
+  },
+  {
+   "name": "Utility2",
+   "type": "esriFieldTypeString",
+   "alias": "Utility2",
+   "sqlType": "sqlTypeNVarchar",
+   "length": 12,
+   "domain": null,
+   "defaultValue": null
+  },
+  {
+   "name": "Utility3",
+   "type": "esriFieldTypeString",
+   "alias": "Utility3",
+   "sqlType": "sqlTypeNVarchar",
+   "length": 12,
+   "domain": null,
+   "defaultValue": null
+  },
+  {
+   "name": "PropertyTy",
+   "type": "esriFieldTypeString",
+   "alias": "PropertyTy",
+   "sqlType": "sqlTypeNVarchar",
+   "length": 12,
+   "domain": null,
+   "defaultValue": null
+  },
+  {
+   "name": "Acreage",
+   "type": "esriFieldTypeDouble",
+   "alias": "Acreage",
+   "sqlType": "sqlTypeFloat",
+   "domain": null,
+   "defaultValue": null
+  },
+  {
+   "name": "SaleDate",
+   "type": "esriFieldTypeDate",
+   "alias": "SaleDate",
+   "sqlType": "sqlTypeTimestamp2",
+   "length": 8,
+   "domain": null,
+   "defaultValue": null
+  },
+  {
+   "name": "SaleAmount",
+   "type": "esriFieldTypeDouble",
+   "alias": "SaleAmount",
+   "sqlType": "sqlTypeFloat",
+   "domain": null,
+   "defaultValue": null
+  },
+  {
+   "name": "CurrentAss",
+   "type": "esriFieldTypeDouble",
+   "alias": "CurrentAss",
+   "sqlType": "sqlTypeFloat",
+   "domain": null,
+   "defaultValue": null
+  },
+  {
+   "name": "OwnerName",
+   "type": "esriFieldTypeString",
+   "alias": "OwnerName",
+   "sqlType": "sqlTypeNVarchar",
+   "length": 150,
+   "domain": null,
+   "defaultValue": null
+  },
+  {
+   "name": "RoofCover",
+   "type": "esriFieldTypeString",
+   "alias": "RoofCover",
+   "sqlType": "sqlTypeNVarchar",
+   "length": 12,
+   "domain": null,
+   "defaultValue": null
+  },
+  {
+   "name": "HeatType",
+   "type": "esriFieldTypeString",
+   "alias": "HeatType",
+   "sqlType": "sqlTypeNVarchar",
+   "length": 12,
+   "domain": null,
+   "defaultValue": null
+  }
+ ],
+ "features": [
+  {
+   "attributes": {
+    "TAXPIN": "710372389673",
+    "District": "5800",
+    "PropertyLo": "601 ANDRE LN SPARTANBURG",
+    "City": "SPARTANBURG",
+    "Zip": "29301-1636",
+    "YearBuilt": 1969,
+    "LivingArea": 0,
+    "TotalArea": 0,
+    "FullBaths": 2,
+    "HalfBaths": 0,
+    "BedRooms": 5,
+    "Garage": "NONE",
+    "Utility1": "ALL PUBLIC",
+    "Utility2": " ",
+    "Utility3": " ",
+    "PropertyTy": "4OOR",
+    "Acreage": 0.41,
+    "SaleDate": 1307664000000,
+    "SaleAmount": 10,
+    "CurrentAss": 522.64,
+    "OwnerName": "RECTOR ALLEN V",
+    "RoofCover": "COMP SHINGLE",
+    "HeatType": "CENTRAL HEAT"
+   }
+  },
+  {
+   "attributes": {
+    "TAXPIN": "710372182876",
+    "District": "5800",
+    "PropertyLo": "604 ANDRE CT SPARTANBURG",
+    "City": "SPARTANBURG",
+    "Zip": "29301-1614",
+    "YearBuilt": 1971,
+    "LivingArea": 0,
+    "TotalArea": 0,
+    "FullBaths": 2,
+    "HalfBaths": 0,
+    "BedRooms": 3,
+    "Garage": "GARAGE ATT",
+    "Utility1": "ALL PUBLIC",
+    "Utility2": " ",
+    "Utility3": " ",
+    "PropertyTy": "4OOR",
+    "Acreage": 0,
+    "SaleDate": 720576000000,
+    "SaleAmount": 1,
+    "CurrentAss": 540,
+    "OwnerName": "BREWER DOUGLAS M (LE)",
+    "RoofCover": "COMP SHINGLE",
+    "HeatType": "CENTRAL HEAT"
+   }
+  },
+  {
+   "attributes": {
+    "TAXPIN": "710372269828",
+    "District": "5800",
+    "PropertyLo": "614 ANDRE CT SPARTANBURG",
+    "City": "SPARTANBURG",
+    "Zip": "29301-1614",
+    "YearBuilt": 1970,
+    "LivingArea": 0,
+    "TotalArea": 0,
+    "FullBaths": 2,
+    "HalfBaths": 1,
+    "BedRooms": 4,
+    "Garage": "NONE",
+    "Utility1": "ALL PUBLIC",
+    "Utility2": " ",
+    "Utility3": " ",
+    "PropertyTy": "4OOR",
+    "Acreage": 0,
+    "SaleDate": 226022400000,
+    "SaleAmount": 0,
+    "CurrentAss": 523.24,
+    "OwnerName": "BARNETTE EVERETTE AND GLADYS",
+    "RoofCover": "COMP SHINGLE",
+    "HeatType": "CENTRAL HEAT"
+   }
+  },
+  {
+   "attributes": {
+    "TAXPIN": "710372187264",
+    "District": "5800",
+    "PropertyLo": "606 ANDRE CT SPARTANBURG",
+    "City": "SPARTANBURG",
+    "Zip": "29301-1614",
+    "YearBuilt": 1970,
+    "LivingArea": 0,
+    "TotalArea": 0,
+    "FullBaths": 2,
+    "HalfBaths": 1,
+    "BedRooms": 4,
+    "Garage": "CARPORT ATT",
+    "Utility1": "ALL PUBLIC",
+    "Utility2": " ",
+    "Utility3": " ",
+    "PropertyTy": "4OOR",
+    "Acreage": 0.36,
+    "SaleDate": 1302652800000,
+    "SaleAmount": 1,
+    "CurrentAss": 540,
+    "OwnerName": "MEADOWS NATALIE B",
+    "RoofCover": "COMP SHINGLE",
+    "HeatType": "CENTRAL HEAT"
+   }
+  },
+  {
+   "attributes": {
+    "TAXPIN": "710373203485",
+    "District": "5800",
+    "PropertyLo": "596 ANDRE LN SPARTANBURG",
+    "City": "SPARTANBURG",
+    "Zip": "29301-1635",
+    "YearBuilt": 1971,
+    "LivingArea": 0,
+    "TotalArea": 0,
+    "FullBaths": 3,
+    "HalfBaths": 0,
+    "BedRooms": 4,
+    "Garage": "NONE",
+    "Utility1": "ALL PUBLIC",
+    "Utility2": " ",
+    "Utility3": " ",
+    "PropertyTy": "4OOR",
+    "Acreage": 0.62,
+    "SaleDate": 812505600000,
+    "SaleAmount": 1,
+    "CurrentAss": 519.32,
+    "OwnerName": "WADE ELRETHA M/DON C",
+    "RoofCover": "COMP SHINGLE",
+    "HeatType": "CENTRAL HEAT"
+   }
+  },
+  {
+   "attributes": {
+    "TAXPIN": "710372273537",
+    "District": "5800",
+    "PropertyLo": "610 ANDRE CT SPARTANBURG",
+    "City": "SPARTANBURG",
+    "Zip": "29301-1614",
+    "YearBuilt": 1971,
+    "LivingArea": 0,
+    "TotalArea": 0,
+    "FullBaths": 2,
+    "HalfBaths": 1,
+    "BedRooms": 4,
+    "Garage": "GARAGE ATT",
+    "Utility1": "ALL PUBLIC",
+    "Utility2": " ",
+    "Utility3": " ",
+    "PropertyTy": "4OOR",
+    "Acreage": 0,
+    "SaleDate": 607392000000,
+    "SaleAmount": 71500,
+    "CurrentAss": 523.84,
+    "OwnerName": "RECTOR LONNIE E & VIRGINIA S",
+    "RoofCover": "COMP SHINGLE",
+    "HeatType": "CENTRAL HEAT"
+   }
+  }
+ ]
+}

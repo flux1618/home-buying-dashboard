@@ -56,6 +56,49 @@ def test_core_module_imports_nothing_forbidden(module: pathlib.Path):
     )
 
 
+def test_core_never_imports_the_sources_layer():
+    """The dependency arrow points one way: sources -> core, never back.
+
+    This is the structural half of ADR 0002. The import ban above stops a network call
+    from being added to a scoring module directly; this stops it from arriving by proxy
+    through a station. If the core ever needs something from `sources/`, the fact belongs
+    in `PropertyFacts` instead.
+    """
+    offenders = {}
+    for module in CORE_MODULES:
+        text = module.read_text()
+        tree = ast.parse(text, filename=str(module))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ImportFrom) and (node.module or "").startswith("sources"):
+                offenders[module.name] = node.module
+            if isinstance(node, ast.ImportFrom) and node.level and node.module == "sources":
+                offenders[module.name] = "..sources"
+            if isinstance(node, ast.Import):
+                for alias in node.names:
+                    if alias.name.startswith("analyzer.sources"):
+                        offenders[module.name] = alias.name
+    assert not offenders, (
+        f"core modules import the sources layer: {offenders}. "
+        f"That inverts the dependency and makes the engine untestable offline."
+    )
+
+
+def test_every_station_declares_what_it_provides():
+    """A station may only write facts it declared, so the data flow stays readable."""
+    from analyzer.core.scoring import PropertyFacts
+    from analyzer.pipeline import build_stations
+    from analyzer.core.profile import load_profile
+
+    known = set(PropertyFacts.__dataclass_fields__)
+    for station in build_stations(load_profile(), {}):
+        assert station.name, "every station needs a name"
+        undeclared = set(station.provides) - known
+        assert not undeclared, (
+            f"station {station.name!r} claims to provide {sorted(undeclared)}, "
+            f"which are not fields on PropertyFacts"
+        )
+
+
 def test_core_is_importable_with_no_third_party_deps():
     """Smoke test: a full analysis runs on a stdlib-only interpreter."""
     from datetime import date

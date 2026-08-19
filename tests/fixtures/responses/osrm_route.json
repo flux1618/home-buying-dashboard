@@ -1,0 +1,40 @@
+{
+ "code": "Ok",
+ "routes": [
+  {
+   "legs": [
+    {
+     "steps": [],
+     "weight": 602.9,
+     "summary": "",
+     "duration": 602.9,
+     "distance": 5678.6
+    }
+   ],
+   "weight_name": "routability",
+   "weight": 602.9,
+   "duration": 602.9,
+   "distance": 5678.6
+  }
+ ],
+ "waypoints": [
+  {
+   "hint": "PKEpgT6hKYEJAAAAiQAAAAAAAABTAAAAbC7bQHB8vUIAAAAAgW9nQgkAAACJAAAAAAAAAFMAAAAIfgAA4CId-2owFQK2Ih37SzAVAgAArwgAAAAA",
+   "location": [
+    -81.976608,
+    34.943082
+   ],
+   "name": "Andre Court",
+   "distance": 5.153122739
+  },
+  {
+   "hint": "S1IqgURckIhBAAAAAQAAAAgAAAAAAAAA1OOQQl2jIz_zXxJBAAAAAEEAAAABAAAACAAAAAAAAAAIfgAAubAd-xORFQK0sB37XJEVAgIAbwUAAAAA",
+   "location": [
+    -81.940295,
+    34.967827
+   ],
+   "name": "East Wood Street",
+   "distance": 8.111488703
+  }
+ ]
+}

@@ -12,6 +12,48 @@ Everything this tool gets wrong, or can't know, stated up front. If a number bel
 
 **How it's handled.** Broadband is always `confidence: estimated`, precision is labeled "census block," and every analysis emits a mandatory task: **call the ISP with the exact street address before making an offer.** This verification step is permanent and is not a stopgap.
 
+**Additional constraint discovered when wiring it up.** The FCC National Broadband Map API has **no anonymous tier** — requests without credentials return HTTP 401. Without `FCC_API_KEY` set in the environment, the broadband station reports itself degraded and writes **no fact at all**. It specifically does not report "no fiber," which would deduct 15 points from every house in the county because of a missing key. For most users, fiber is therefore a manual input.
+
+---
+
+## The county's own parcel server is unreachable, so parcel data is from February 2021
+
+**The limitation.** The authoritative source is Spartanburg County's ArcGIS server at `maps.spartanburgcounty.org`. It cannot be reached: the host serves an **incomplete TLS certificate chain**, so every request fails with `SSL: CERTIFICATE_VERIFY_FAILED — unable to get local issuer certificate`. This is not a timeout and not rate limiting; the connection cannot be verified.
+
+The fallback is a public ArcGIS mirror of the county's **Parcel and CAMA extract dated February 1, 2021** — 29,402 records. Every field read from it (year built, bedrooms, baths, utilities, assessment-ratio code) reflects the property as of that date.
+
+**Why it matters.** A house renovated, subdivided, re-roofed, or reclassified since early 2021 will read wrong. The 4%/6% assessment-ratio code in particular describes the **owner at that time**, which may not be the current owner.
+
+**How it's handled.** Mirror values are `confidence: estimated` with the 2021 vintage in the note, and the fallback always emits a **blocking** task to pull the current parcel card from the [Spartanburg County Assessor](https://www.spartanburgcounty.gov/168/Assessor) by hand. Disabling certificate verification to reach the county directly was considered and rejected ([ADR 0006](adr/0006-source-station-contract.md)). A live contract test asserts the county server is still unreachable, so the day it is fixed shows up as a test failure.
+
+---
+
+## Parcel matching buffers the geocoded point, and can pick the wrong lot
+
+**The limitation.** The Census geocoder returns a point interpolated along the **street centreline**, which routinely lands a metre or two outside the parcel it belongs to — for 606 Andre Ct it sat roughly 3×10⁻⁵ degrees past the eastern edge, so a strict point-in-polygon query returned nothing for a house that plainly exists. The query is therefore buffered by 40 metres.
+
+**Why it matters.** On a dense street, a 40-metre buffer can return several neighbouring lots. Silently taking the first would attach a neighbour's bedroom count, year built, and utility type to your analysis.
+
+**How it's handled.** Candidates are disambiguated by matching the street number in the address. When nothing matches, the chosen record is flagged and a **blocking** task lists the alternatives by address. The flag depends on the input address containing a street number, so a lot without one is a known blind spot.
+
+---
+
+## Garage bay count is never read from county data
+
+**The limitation.** The CAMA `Garage` field takes exactly six values: `CARPORT ATT`, `CARPORT DET`, `GARAGE ATT`, `GARAGE DET`, `GARAGEBSMT`, `NONE`. **No bay count exists anywhere in the dataset.**
+
+**How it's handled.** `garage_spaces` stays a user input, and the analysis emits a task to confirm the count. Reading "GARAGE ATT" as two bays to satisfy the two-bay preference rule would be inventing data.
+
+Similarly, `LivingArea` is frequently `0`, meaning *not recorded* rather than zero square feet. Zero is treated as unknown, which means square footage often has to come from the listing or an appraisal.
+
+---
+
+## The FEMA National Risk Index is not wired in
+
+**The limitation.** The National Risk Index API endpoint was unreachable during development, so broader hazard context (wildfire, wind, heat) is absent. Only the regulatory NFHL flood zone is used.
+
+**How it's handled.** Nothing pretends to cover it. Flood is scored; other natural hazards are not assessed at all.
+
 ---
 
 ## Millage rates are typical, not parcel-specific

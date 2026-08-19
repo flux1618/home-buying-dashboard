@@ -11,3 +11,4 @@ Format is deliberately lightweight — context, decision, alternatives, conseque
 | [0003](0003-no-listing-or-mls-extraction.md) | No Zillow/Redfin extraction and no MLS integration | Accepted |
 | [0004](0004-llm-scope-boundary.md) | LLMs do extraction only and never arithmetic | Accepted |
 | [0005](0005-capital-expenses-deduct-and-unknowns-pin.md) | Aging roof/HVAC deduct with a dollar range; unknown hard-fail inputs pin the score to 50 | Accepted |
+| [0006](0006-source-station-contract.md) | Every external source is a station with one failure contract: never raise, never guess | Accepted |

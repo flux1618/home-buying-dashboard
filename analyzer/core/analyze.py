@@ -112,7 +112,12 @@ def analyze(
             "beds": facts.beds,
             "baths": facts.baths,
             "year_built": facts.year_built,
+            "garage_spaces": facts.garage_spaces,
             "hoa_monthly": facts.hoa_monthly,
+            # Echoed because they drive the capital-expense deductions, and a reader who
+            # disagrees with a $28,000 estimate needs to see which ages produced it.
+            "roof_age_years": facts.roof_age_years,
+            "hvac_age_years": facts.hvac_age_years,
             "water_sewer": facts.water_sewer,
             "flood_zone": facts.flood_zone,
             "commute_min": facts.commute_min,

@@ -1,0 +1,270 @@
+{
+ "result": {
+  "input": {
+   "address": {
+    "address": "606 Andre Ct, Spartanburg, SC 29301"
+   },
+   "vintage": {
+    "isDefault": true,
+    "id": "4",
+    "vintageName": "Current_Current",
+    "vintageDescription": "Current Vintage - Current Benchmark"
+   },
+   "benchmark": {
+    "isDefault": true,
+    "benchmarkDescription": "Public Address Ranges - Current Benchmark",
+    "id": "4",
+    "benchmarkName": "Public_AR_Current"
+   }
+  },
+  "addressMatches": [
+   {
+    "tigerLine": {
+     "side": "R",
+     "tigerLineId": "19466150"
+    },
+    "geographies": {
+     "States": [
+      {
+       "STATENS": "01779799",
+       "GEOID": "45",
+       "CENTLAT": "+33.8758222",
+       "AREAWATER": "5074597111",
+       "STATE": "45",
+       "BASENAME": "South Carolina",
+       "STUSAB": "SC",
+       "OID": "27490140244538",
+       "LSADC": "00",
+       "FUNCSTAT": "A",
+       "INTPTLAT": "+33.8741776",
+       "DIVISION": "5",
+       "NAME": "South Carolina",
+       "REGION": "3",
+       "OBJECTID": 4,
+       "CENTLON": "-080.8583129",
+       "AREALAND": "77865846696",
+       "INTPTLON": "-080.8542639",
+       "MTFCC": "G4000"
+      }
+     ],
+     "Combined Statistical Areas": [
+      {
+       "POP100": "",
+       "GEOID": "273",
+       "CENTLAT": "+34.6711267",
+       "AREAWATER": "442308124",
+       "BASENAME": "Greenville-Spartanburg-Anderson, SC",
+       "OID": "2619034687908033",
+       "LSADC": "M0",
+       "FUNCSTAT": "S",
+       "INTPTLAT": "+34.6749624",
+       "NAME": "Greenville-Spartanburg-Anderson, SC CSA",
+       "OBJECTID": 156,
+       "CSA": "273",
+       "CENTLON": "-082.2934301",
+       "INTPTLON": "-082.2946168",
+       "AREALAND": "15534737446",
+       "HU100": "",
+       "MTFCC": "G3100"
+      }
+     ],
+     "County Subdivisions": [
+      {
+       "COUSUB": "93198",
+       "GEOID": "4508393198",
+       "CENTLAT": "+34.9543365",
+       "AREAWATER": "1957214",
+       "STATE": "45",
+       "BASENAME": "Spartanburg",
+       "OID": "27690242991818",
+       "LSADC": "22",
+       "FUNCSTAT": "S",
+       "INTPTLAT": "+34.9542481",
+       "NAME": "Spartanburg CCD",
+       "OBJECTID": 11463,
+       "CENTLON": "-081.9332274",
+       "COUSUBCC": "Z5",
+       "AREALAND": "315747437",
+       "INTPTLON": "-081.9328690",
+       "MTFCC": "G4040",
+       "COUSUBNS": "01938427",
+       "COUNTY": "083"
+      }
+     ],
+     "Urban Areas": [
+      {
+       "GEOID": "83548",
+       "CENTLAT": "+34.9540089",
+       "AREAWATER": "3845191",
+       "BASENAME": "Spartanburg, SC",
+       "OID": "27021217028799",
+       "UA": "83548",
+       "LSADC": "67",
+       "FUNCSTAT": "S",
+       "INTPTLAT": "+34.9537562",
+       "NAME": "Spartanburg, SC Urban Area",
+       "OBJECTID": 451,
+       "CENTLON": "-081.9993465",
+       "AREALAND": "468690187",
+       "INTPTLON": "-081.9991813",
+       "MTFCC": "G3500"
+      }
+     ],
+     "Counties": [
+      {
+       "GEOID": "45083",
+       "CENTLAT": "+34.9307129",
+       "AREAWATER": "29439684",
+       "STATE": "45",
+       "BASENAME": "Spartanburg",
+       "OID": "27590242990595",
+       "LSADC": "06",
+       "FUNCSTAT": "A",
+       "INTPTLAT": "+34.9348504",
+       "NAME": "Spartanburg County",
+       "OBJECTID": 2382,
+       "CENTLON": "-081.9906504",
+       "COUNTYCC": "H1",
+       "COUNTYNS": "01248592",
+       "AREALAND": "2093764114",
+       "INTPTLON": "-081.9933706",
+       "MTFCC": "G4020",
+       "COUNTY": "083"
+      }
+     ],
+     "2024 State Legislative Districts - Upper": [
+      {
+       "GEOID": "45011",
+       "CENTLAT": "+35.0687050",
+       "AREAWATER": "7939099",
+       "STATE": "45",
+       "BASENAME": "11",
+       "OID": "2129035781145765",
+       "SLDU": "011",
+       "LSADC": "LU",
+       "FUNCSTAT": "N",
+       "INTPTLAT": "+35.0689712",
+       "NAME": "State Senate District 11",
+       "OBJECTID": 443,
+       "CENTLON": "-082.0155043",
+       "LSY": "2024",
+       "AREALAND": "456573268",
+       "INTPTLON": "-082.0151378",
+       "MTFCC": "G5210",
+       "LDTYP": "O"
+      }
+     ],
+     "2024 State Legislative Districts - Lower": [
+      {
+       "GEOID": "45031",
+       "CENTLAT": "+34.9409334",
+       "SLDL": "031",
+       "AREAWATER": "318656",
+       "STATE": "45",
+       "BASENAME": "31",
+       "OID": "2139035781145881",
+       "LSADC": "LL",
+       "FUNCSTAT": "N",
+       "INTPTLAT": "+34.9400787",
+       "NAME": "State House District 31",
+       "OBJECTID": 1527,
+       "CENTLON": "-081.9529637",
+       "LSY": "2024",
+       "AREALAND": "63101987",
+       "INTPTLON": "-081.9538341",
+       "MTFCC": "G5220",
+       "LDTYP": "O"
+      }
+     ],
+     "2020 Census Blocks": [
+      {
+       "SUFFIX": "",
+       "GEOID": "450830206012004",
+       "CENTLAT": "+34.9440748",
+       "BLOCK": "2004",
+       "AREAWATER": "0",
+       "STATE": "45",
+       "BASENAME": "2004",
+       "OID": "210701006589956",
+       "LSADC": "BK",
+       "FUNCSTAT": "S",
+       "INTPTLAT": "+34.9440748",
+       "NAME": "Block 2004",
+       "OBJECTID": 4125027,
+       "TRACT": "020601",
+       "CENTLON": "-081.9771772",
+       "BLKGRP": "2",
+       "AREALAND": "128706",
+       "INTPTLON": "-081.9771772",
+       "MTFCC": "G5040",
+       "LWBLKTYP": "L",
+       "UR": "U",
+       "COUNTY": "083"
+      }
+     ],
+     "Census Tracts": [
+      {
+       "GEOID": "45083020601",
+       "CENTLAT": "+34.9436837",
+       "AREAWATER": "0",
+       "STATE": "45",
+       "BASENAME": "206.01",
+       "OID": "20790242996498",
+       "LSADC": "CT",
+       "FUNCSTAT": "S",
+       "INTPTLAT": "+34.9436837",
+       "NAME": "Census Tract 206.01",
+       "OBJECTID": 57748,
+       "TRACT": "020601",
+       "CENTLON": "-081.9798661",
+       "AREALAND": "3400247",
+       "INTPTLON": "-081.9798661",
+       "MTFCC": "G5020",
+       "COUNTY": "083"
+      }
+     ],
+     "119th Congressional Districts": [
+      {
+       "GEOID": "4504",
+       "CENTLAT": "+34.9304387",
+       "CDSESSN": "119",
+       "AREAWATER": "39688780",
+       "BASENAME": "4",
+       "STATE": "45",
+       "OID": "2119035964493392",
+       "LSADC": "C2",
+       "FUNCSTAT": "N",
+       "INTPTLAT": "+34.9293016",
+       "NAME": "Congressional District 4",
+       "OBJECTID": 138,
+       "CENTLON": "-082.1873186",
+       "CD119": "04",
+       "AREALAND": "3195413960",
+       "INTPTLON": "-082.1855955",
+       "MTFCC": "G5200"
+      }
+     ]
+    },
+    "coordinates": {
+     "x": -81.976650040288,
+     "y": 34.943051300872
+    },
+    "addressComponents": {
+     "zip": "29301",
+     "streetName": "ANDRE",
+     "preType": "",
+     "city": "SPARTANBURG",
+     "preDirection": "",
+     "suffixDirection": "",
+     "fromAddress": "606",
+     "state": "SC",
+     "suffixType": "CT",
+     "toAddress": "698",
+     "suffixQualifier": "",
+     "preQualifier": ""
+    },
+    "matchedAddress": "606 ANDRE CT, SPARTANBURG, SC, 29301"
+   }
+  ]
+ }
+}

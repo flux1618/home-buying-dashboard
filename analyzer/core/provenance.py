@@ -88,11 +88,22 @@ def unavailable(note: str) -> Value:
 
 @dataclass
 class Degradation:
-    """Recorded whenever a source could not be reached."""
+    """Recorded whenever a source could not be reached.
+
+    `missing` matters as much as `reason`. "The FCC API is down" tells a reader nothing
+    actionable; "the FCC API is down, so fiber_available is unknown" tells them exactly
+    which line of the report to distrust and what to go verify by hand.
+    """
 
     station: str
     reason: str
+    missing: tuple[str, ...] = ()
     at: str = field(default_factory=now_iso)
 
-    def to_dict(self) -> dict[str, str]:
-        return {"station": self.station, "reason": self.reason, "at": self.at}
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "station": self.station,
+            "reason": self.reason,
+            "missing": list(self.missing),
+            "at": self.at,
+        }
