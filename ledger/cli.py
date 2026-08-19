@@ -154,12 +154,19 @@ def render_show(detail: dict) -> None:
     if detail["journal"]:
         print(f"\n  {BOLD}Journal{OFF}")
         for entry in detail["journal"]:
-            render_entry(entry, indent="    ")
+            render_entry(entry, indent="    ", show_property=False)
 
 
-def render_entry(entry: dict, *, indent: str = "  ") -> None:
+def render_entry(entry: dict, *, indent: str = "  ", show_property: bool = True) -> None:
+    """`show_property=False` under a single house's heading.
+
+    Repeating the address on every line of that house's own journal is noise that pushes the
+    part you are reading -- the note -- off to the right.
+    """
     tail = f" {DIM}resolves #{entry['resolves']}{OFF}" if entry["resolves"] else ""
-    where = f" {DIM}[{entry['property_key']}]{OFF}" if entry["property_key"] else ""
+    where = ""
+    if show_property and entry["property_key"]:
+        where = f" {DIM}[{entry['property_key']}]{OFF}"
     print(
         f"{indent}{DIM}#{entry['id']} {entry['created_at'][:10]}{OFF} "
         f"{BOLD}{entry['kind']}{OFF}{where}  {entry['body']}{tail}"
@@ -188,7 +195,7 @@ def main(argv: list[str] | None = None) -> int:
     # subcommand, so `--json stats` would silently print human output. SUPPRESS means the
     # attribute is only set when the flag is actually present.
     common = argparse.ArgumentParser(add_help=False)
-    common.add_argument("--db", default=argparse.SUPPRESS, metavar="PATH", help=argparse.SUPPRESS)
+    common.add_argument("--db", default=argparse.SUPPRESS, metavar="PATH", help="ledger file; default is $HBA_DATA_DIR")
     common.add_argument("--json", action="store_true", default=argparse.SUPPRESS, help="machine-readable output")
 
     sub = parser.add_subparsers(dest="command", required=True, parser_class=argparse.ArgumentParser)

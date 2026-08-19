@@ -215,10 +215,21 @@ class Ledger:
                 ),
             )
             analysis_id = int(cursor.lastrowid or 0)
+            # Two different numbers, and confusing them is how a demo reads wrong. `analysis_id`
+            # is the global rowid -- stable, useful for linking, and meaningless next to an
+            # address. `analysis_number` is how many times *this house* has been analyzed, which
+            # is what "#2" means to a reader looking at one property. The first save of the
+            # third house was printing "#3", which reads as its third analysis.
+            analysis_number = int(
+                self.conn.execute(
+                    "SELECT COUNT(*) FROM analyses WHERE property_key = ?", (key,)
+                ).fetchone()[0]
+            )
 
         return {
             "property": self.get_property(key)["property"],
             "analysis_id": analysis_id,
+            "analysis_number": analysis_number,
             "created": existing is None,
             "diff": self.diff(key),
         }

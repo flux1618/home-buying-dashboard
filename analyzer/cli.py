@@ -122,6 +122,17 @@ def render_max_price(solution: dict | None) -> None:
         print(f"    {DIM}· {note}{OFF}")
 
 
+def _street_of(address: str) -> str:
+    """The house number and street name, upper-cased, punctuation dropped.
+
+    Used only to decide whether the geocoder substituted a different address. Deliberately
+    crude: it compares the part a person would recognise and ignores the ZIP, because a
+    corrected ZIP is a fix and a corrected street name is a substitution.
+    """
+    head = address.upper().split(",")[0]
+    return "".join(ch for ch in head if ch.isalnum() or ch == " ").strip()
+
+
 def render_ledger(saved: dict) -> None:
     """Confirm what was written, then report what moved since last time.
 
@@ -132,7 +143,17 @@ def render_ledger(saved: dict) -> None:
     """
     print(f"\n  {BOLD}Ledger{OFF}")
     label = "Saved as" if saved["first_time"] else "Appended to"
-    print(f"    {label:<12} {saved['key']}  {DIM}#{saved['analysis_id']}{OFF}")
+    print(f"    {label:<12} {saved['key']}  {DIM}#{saved['analysis_number']}{OFF}")
+
+    # The geocoder does fuzzy matching, and it will quietly hand back a *different street* for
+    # an address it cannot find -- "115 Chestnut Ridge Dr" came back as "115 Chestnut St" in a
+    # different ZIP. Every number below it was then computed for a house nobody asked about.
+    # Silence here is the dangerous case, so say it out loud whenever the match is not the
+    # request. Compared loosely because case and punctuation differences are not substitutions.
+    requested = (saved.get("requested") or "").upper()
+    if requested and _street_of(requested) not in saved["key"]:
+        print(f"    {GOLD}Matched a different address{OFF}")
+        print(f"    {DIM}you typed {requested} - verify this is the same house before trusting anything above{OFF}")
 
     diff = saved.get("diff")
     if not diff:
@@ -319,6 +340,11 @@ def main(argv: list[str] | None = None) -> int:
         result.document["ledger"] = {
             "key": saved["property"]["key"],
             "analysis_id": saved["analysis_id"],
+            "analysis_number": saved["analysis_number"],
+            # What was typed, kept next to what it matched, so the renderer can point out a
+            # geocoder substitution. Stored in the document too -- a saved analysis of the
+            # wrong house should carry the evidence of how it got there.
+            "requested": saved["property"]["raw_input"],
             "first_time": saved["created"],
             "diff": saved["diff"],
         }

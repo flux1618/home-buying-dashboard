@@ -531,6 +531,91 @@ class TestTheShortlist:
 # =============================================================================
 
 
+class TestTheSaveLineTellsTheTruth:
+    """Two bugs found by running the tool rather than the tests.
+
+    Both were in the three lines the user reads after a save, which is the worst place for a
+    bug to hide: everything above them was correct.
+    """
+
+    def test_the_number_counts_this_house_not_every_house(self, ledger, profile):
+        """The first save of a third house was printing "#3".
+
+        `analysis_id` is a global rowid. Next to an address, a reader takes the number to mean
+        "the third time we looked at this house", which is a different and wrong statement.
+        """
+        ledger.save_analysis(document(price=268000), profile=profile)
+        ledger.save_analysis(document(price=259000), profile=profile)
+        other = ledger.save_analysis(
+            document(price=315000, matched="900 OTHER RD SPARTANBURG SC 29302"), profile=profile
+        )
+        assert other["analysis_number"] == 1, "a new house's first analysis is its first"
+        assert other["analysis_id"] == 3, "the global id is still 3, and still useful"
+
+    def test_a_reanalysis_increments_the_house_number(self, ledger, profile):
+        first = ledger.save_analysis(document(price=268000), profile=profile)
+        second = ledger.save_analysis(document(price=259000), profile=profile)
+        assert (first["analysis_number"], second["analysis_number"]) == (1, 2)
+
+    def test_the_geocoder_substituting_a_street_is_recoverable_from_the_row(self, ledger, profile):
+        """"115 Chestnut Ridge Dr" came back as "115 Chestnut St" in a different ZIP.
+
+        The geocoder matches fuzzily and will hand back a different street for an address it
+        cannot find. Every figure in the analysis is then correct for a house nobody asked
+        about. The raw input has to survive so the substitution is provable after the fact --
+        this is the same reason `save_analysis` never overwrites `raw_input`.
+        """
+        saved = ledger.save_analysis(
+            document(price=315000, matched="115 CHESTNUT ST SPARTANBURG SC 29302"),
+            profile=profile,
+            raw_input="115 Chestnut Ridge Dr, Spartanburg, SC 29301",
+        )
+        assert saved["property"]["raw_input"] == "115 Chestnut Ridge Dr, Spartanburg, SC 29301"
+        assert "CHESTNUT RIDGE" not in saved["property"]["key"]
+
+    def test_the_cli_says_so_out_loud(self):
+        """A silent substitution is the dangerous one, so the renderer has to speak."""
+        from analyzer.cli import _street_of
+
+        assert _street_of("115 Chestnut Ridge Dr, Spartanburg, SC 29301") == "115 CHESTNUT RIDGE DR"
+        assert _street_of("606 Andre Ct, Spartanburg, SC 29301") == "606 ANDRE CT"
+
+    def test_a_matching_address_does_not_trigger_the_warning(self, capsys):
+        """Case and punctuation differences are not substitutions, and crying wolf costs the
+        warning its meaning."""
+        from analyzer.cli import render_ledger
+
+        render_ledger(
+            {
+                "key": "606 ANDRE CT SPARTANBURG SC 29301",
+                "analysis_id": 1,
+                "analysis_number": 1,
+                "requested": "606 Andre Ct, Spartanburg, SC 29301",
+                "first_time": True,
+                "diff": None,
+            }
+        )
+        out = capsys.readouterr().out
+        assert "different address" not in out
+
+    def test_a_substituted_address_does(self, capsys):
+        from analyzer.cli import render_ledger
+
+        render_ledger(
+            {
+                "key": "115 CHESTNUT ST SPARTANBURG SC 29302",
+                "analysis_id": 1,
+                "analysis_number": 1,
+                "requested": "115 Chestnut Ridge Dr, Spartanburg, SC 29301",
+                "first_time": True,
+                "diff": None,
+            }
+        )
+        out = capsys.readouterr().out
+        assert "different address" in out
+        assert "CHESTNUT RIDGE" in out
+
+
 class TestTheCliDoor:
     """Runs the CLI as a subprocess, which is the only way to test that argparse, the
     deferred import, and the exit codes all line up. The autouse socket guard does not block
