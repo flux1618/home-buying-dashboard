@@ -57,6 +57,13 @@ jobs:
       - name: Run the offline suite
         # No -m flag needed: pyproject already sets `-m 'not live'` in addopts, so the
         # default run is offline by construction rather than by remembering a flag.
+        env:
+          # The static page's amortization and max-price solvers are compared to Python by
+          # shelling out to node. Those tests skip when node is absent, which is correct on a
+          # developer machine and a false green in CI -- the run would report a pass having
+          # never compared the two implementations. This makes a missing node a failure here.
+          # ubuntu-latest ships node, so this asserts a fact rather than adding a dependency.
+          HBA_REQUIRE_NODE: "1"
         run: pytest -v
 
   core-is-still-pure:

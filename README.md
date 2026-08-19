@@ -167,7 +167,7 @@ Goal: Paste an inspection, HOA bylaws and seller disclosure -> structured JSON, 
 
 Goal: Be able to put in house with variables for down payment, rate, insurance, HOA dues, fees in, and calculate monthly PITI and max price under a DTI ceiling out.
 
-Max price is bisected over the real cost engine and returns two answers, a lender price and a household price ([ADR 0010](docs/adr/0010-inverse-affordability-is-two-answers.md)). The schedule counts in integer cents and closes on its term month ([ADR 0012](docs/adr/0012-money-is-integer-cents-in-the-schedule.md)); `--extra-monthly` shows what paying more buys. Principal and interest only — tax, insurance, HOA, and mortgage insurance do not amortize, and the output says so. **No web UI yet** for either.
+Max price is bisected over the real cost engine and returns two answers, a lender price and a household price ([ADR 0010](docs/adr/0010-inverse-affordability-is-two-answers.md)). The schedule counts in integer cents and closes on its term month ([ADR 0012](docs/adr/0012-money-is-integer-cents-in-the-schedule.md)); `--extra-monthly` shows what paying more buys. Principal and interest only — tax, insurance, HOA, and mortgage insurance do not amortize, and the output says so. The schedule is now on the page too, driven by the existing sliders, with a second implementation in `app.js` held to the Python row for row by a zero-tolerance parity test ([ADR 0013](docs/adr/0013-the-page-gets-its-own-schedule-under-a-parity-test.md)). The household max price is still CLI and API only.
 
 2. Graphical rate sensitivity band
 

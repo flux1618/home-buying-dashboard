@@ -391,16 +391,48 @@ The others are not modeling gaps so much as a statement about what a schedule is
 projection of one loan under one set of terms held still. Anything that changes the terms
 starts a new schedule.
 
-## The static page still has no amortization view
+## The page's amortization schedule is a second implementation of the Python one
 
-Same gap as the ledger. The schedule is reachable from `python -m analyzer.cli --amortize`
-and from `POST /amortization`, and the committed snapshot at the public URL knows nothing
-about it.
+The static page now draws the schedule, and it does so with its own `amortize()` in `app.js`
+rather than by reading compiled values. That is a real duplication and the reasoning is in
+[ADR 0013](adr/0013-the-page-gets-its-own-schedule-under-a-parity-test.md): a schedule is a
+loop over live slider inputs, not a table of rule outputs, so there is nothing to compile.
 
-Under [ADR 0008](adr/0008-browser-rules-are-compiled-not-rewritten.md) a browser version
-would have to be compiled from `analyzer/core/amortization.py` rather than hand-ported, or it
-becomes a second implementation of the same arithmetic — which the page's `solveMaxPrice`
-already is, and that one needs a parity test to stay honest.
+The mitigation is `tests/test_amortization_parity.py`, which runs `app.js` under `node` and
+compares all 360 rows to Python at zero tolerance across nine parameter sets. What that
+protects against is a drift where both sides return a confident, complete, internally
+consistent schedule and only one is right — nothing on the page would look broken.
+
+What it does not protect against: **the parity test skips silently when `node` is not
+installed.** CI has node, so the check runs on every push, but a local `pytest` on a machine
+without it will report a pass having never compared the two. That is the same gap the four
+existing max-price parity tests have.
+
+## The page's year table and charts are rendered from 360 points with no downsampling
+
+Both amortization charts receive every payment. Measured acceptable at 1440px and 375px, but
+it is the heaviest thing on the page and it re-renders on every slider input. The extra-payment
+slider deliberately redraws only its own section rather than calling the global redraw, because
+rebuilding the Leaflet map on a drag stutters on a Raspberry Pi.
+
+Downsampling was rejected rather than overlooked: a thinned curve can put the visual crossing
+point in a different month than the number in the KPI above it.
+
+## The page's schedule assumes 30 years, always
+
+`amortize()` is called with a 360-month term hard-coded, because the page has no term control.
+The Python module takes any term and is tested at 180 months. A 15-year note is a real option
+for this purchase and the page cannot show it.
+
+## Two of the page's four charts keep the wrong theme colours after a toggle
+
+Chart.js copies axis and legend colours into its options at construction, so calling
+`.update()` after a theme switch re-renders with the previous theme's greys. The rent-vs-buy
+and cash-flow-runway charts do exactly that and keep dark gridlines in light mode.
+
+The two amortization charts are rebuilt instead of updated, which re-reads the CSS variables
+and looks correct in both themes. The same fix would work on the other two and was not applied
+in this pass — noted rather than silently left as an inconsistency.
 
 ## Not financial advice
 

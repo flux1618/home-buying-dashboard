@@ -108,6 +108,11 @@ tr.reject td:first-child{border-left:3px solid var(--red);padding-left:8px;color
 .callout{background:var(--surface-3);border-left:3px solid var(--primary);padding:var(--space-3) var(--space-4);border-radius:0 6px 6px 0;font-size:var(--text-sm);margin:var(--space-3) 0}
 .callout b{color:var(--text)}
 .small-src{font-size:var(--text-xs);color:var(--text-faint);margin-top:6px}
+.k-lab{font-size:var(--text-xs);color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:var(--space-2)}
+.summary-row{cursor:pointer;font-size:var(--text-sm);color:var(--primary);padding:var(--space-2) 0;user-select:none}
+.summary-row:hover{color:var(--primary-strong)}
+#a-table td{font-variant-numeric:tabular-nums}
+@media(max-width:560px){#a-table td,#a-table th{padding:8px 5px;font-size:.78rem}}
 .small-src a{color:var(--text-muted)}
 
 .tag-row{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
@@ -155,6 +160,7 @@ textarea{width:100%;min-height:120px;background:var(--surface-2);border:1px soli
       <a href="#map-section">Map</a>
       <a href="#kpi">Market snapshot</a>
       <a href="#afford">Affordability</a>
+      <a href="#amort">Amortization</a>
       <a href="#break-even">Rent vs buy</a>
       <a href="#scorecard">Submarket scores</a>
       <a href="#hazard">Hazard risk</a>
@@ -234,6 +240,53 @@ textarea{width:100%;min-height:120px;background:var(--surface-2);border:1px soli
       <div class="callout" id="maxp-note" style="margin-top:12px"></div>
       <div class="formula" style="margin-top:12px">P&I = L × r(1+r)^n / ((1+r)^n − 1) &nbsp;·&nbsp; Tax/mo = price × 0.04 × mills/1000 / 12 (Act 388: owner-occupied is exempt from school operating millage) &nbsp;·&nbsp; Ins/mo = SC avg $3,102 / 12 (get an actual quote before contract)</div>
       <div class="callout" id="afford-verdict"></div>
+    </section>
+
+    <!-- AMORTIZATION -->
+    <section id="amort">
+      <h2>Amortization &middot; where the payment actually goes</h2>
+      <div class="sub">Driven by the price, down-payment and rate sliders above. Principal and interest only &mdash; this is the loan, not the housing payment.</div>
+      <div class="grid grid-4">
+        <div class="kpi"><div class="k">Monthly P &amp; I</div><div class="v numeric" id="a-pmt">&mdash;</div><div class="d" id="a-pmt-d">30-yr fixed</div></div>
+        <div class="kpi"><div class="k">Interest over the life</div><div class="v numeric" id="a-int">&mdash;</div><div class="d" id="a-int-d">On top of the loan</div></div>
+        <div class="kpi"><div class="k">Principal beats interest</div><div class="v numeric" id="a-cross">&mdash;</div><div class="d" id="a-cross-d">First payment mostly principal</div></div>
+        <div class="kpi" style="border-color:var(--primary)"><div class="k"><b style="color:var(--primary)">Payoff</b></div><div class="v numeric" id="a-payoff">&mdash;</div><div class="d" id="a-payoff-d">At the scheduled payment</div></div>
+      </div>
+
+      <div class="slider-wrap" style="margin-top:var(--space-4);max-width:520px"><label>Extra principal each month <b id="l-extra">$0</b></label><input id="i-extra" type="range" min="0" max="1000" step="25" value="0"/></div>
+      <div class="callout" id="a-extra-note"></div>
+
+      <div class="grid grid-2" style="margin-top:var(--space-4)">
+        <div>
+          <div class="k-lab">Interest vs principal, per payment</div>
+          <div style="position:relative;height:260px;width:100%"><canvas id="split-chart"></canvas></div>
+          <div class="small-src">The crossing point is the crossover above. Left of it, most of the payment is rent on the money.</div>
+        </div>
+        <div>
+          <div class="k-lab">Balance remaining</div>
+          <div style="position:relative;height:260px;width:100%"><canvas id="bal-chart"></canvas></div>
+          <div class="small-src">The dashed line is the schedule with no extra payment, for comparison.</div>
+        </div>
+      </div>
+
+      <details style="margin-top:var(--space-4)">
+        <summary class="summary-row">Year-by-year table</summary>
+        <div style="max-height:340px;overflow:auto;margin-top:var(--space-3)">
+          <table id="a-table">
+            <thead><tr>
+              <th style="cursor:default">Year</th>
+              <th style="cursor:default;text-align:right">Interest</th>
+              <th style="cursor:default;text-align:right">Principal</th>
+              <th style="cursor:default;text-align:right">Extra</th>
+              <th style="cursor:default;text-align:right">End balance</th>
+            </tr></thead>
+            <tbody id="a-body"></tbody>
+          </table>
+        </div>
+      </details>
+
+      <div class="formula" style="margin-top:12px">interest = balance &times; rate/12 &nbsp;&middot;&nbsp; principal = payment &minus; interest &nbsp;&middot;&nbsp; balance &minus;= principal + extra &nbsp;&middot;&nbsp; last payment = balance + interest, not the level payment</div>
+      <div class="callout" id="a-excludes"></div>
     </section>
 
     <!-- RENT vs BUY -->

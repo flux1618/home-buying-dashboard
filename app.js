@@ -1,5 +1,5 @@
 /* Spartanburg Home-Buy Decision Deck */
-let DATA=null, MAP=null, LAYERS={}, ACTIVE=new Set(['price','drive','schools']), BE_CHART=null, RUNWAY_CHART=null;
+let DATA=null, MAP=null, LAYERS={}, ACTIVE=new Set(['price','drive','schools']), BE_CHART=null, RUNWAY_CHART=null, SPLIT_CHART=null, BAL_CHART=null;
 const fmt$=n=>n==null||isNaN(n)?'—':'$'+Math.round(n).toLocaleString();
 const fmt$k=n=>n==null||isNaN(n)?'—':'$'+(Math.round(n/1000))+'K';
 const pct=n=>n==null||isNaN(n)?'—':(n*100).toFixed(1)+'%';
@@ -15,6 +15,7 @@ async function boot(){
   renderTiming();
   renderHazards();
   bindGlobals();
+  bindAmort();
   bindRentBuy();
   bindProperty();
   bindRunway();
@@ -31,6 +32,13 @@ function toggleTheme(){
   }
   if(BE_CHART){ BE_CHART.update(); }
   if(RUNWAY_CHART){ RUNWAY_CHART.update(); }
+  // Rebuilt rather than update()d. Chart.js copies the axis and legend colours into its
+  // options at construction, so update() re-renders with the *old* theme's greys -- which
+  // is why the two charts above keep dark-theme gridlines in light mode. Rebuilding here
+  // re-reads the CSS variables. Same fix would work above; not touching those in this pass.
+  if(SPLIT_CHART || BAL_CHART){
+    renderAmortization(readNum('i-price'), readNum('i-down'), readNum('i-rate')/100);
+  }
 }
 
 /* ---------------- MAP ---------------- */
@@ -217,6 +225,14 @@ function bindGlobals(){
     el.addEventListener('input',()=>updateAll());
   });
 }
+function bindAmort(){
+  // Its own listener rather than joining bindGlobals: the extra payment changes nothing
+  // outside this section, and redrawing the map and every chart on a slider drag is a
+  // visible stutter on the Pi.
+  document.getElementById('i-extra').addEventListener('input',()=>{
+    renderAmortization(readNum('i-price'), readNum('i-down'), readNum('i-rate')/100);
+  });
+}
 function readNum(id){ return parseFloat(document.getElementById(id).value); }
 function updateAll(){
   const inc=readNum('i-inc'), exp=readNum('i-exp'), dti=readNum('i-dti');
@@ -250,6 +266,7 @@ function updateAll(){
   else{ fEl.textContent = `Over ${dti}% target — cut price or grow down`; fEl.className='d down'; }
   document.getElementById('k-ctc').textContent = fmt$(down + closing);
   renderMaxPrice(inc, down, rate, hoa, dti);
+  renderAmortization(price, down, rate);
 
   // Verdict
   const rentEq = 2200; // Spartanburg 3-bed rent baseline
@@ -273,8 +290,7 @@ function updateAll(){
    Bisecting the same function the KPIs use cannot disagree with them, because it is them. */
 function pitiParts(price, down, rate, hoa){
   const loan = Math.max(0, price - down);
-  const n=360, r=rate/12;
-  const pi = r>0 ? loan*(r*Math.pow(1+r,n))/(Math.pow(1+r,n)-1) : loan/n;
+  const pi = pmt(loan, rate, 360);
   // Tax: SC owner-occupied 4% ratio × ~280 mills (est.), school-operating exempt (Act 388)
   const mills = DATA.global.tax.typical_owner_millage_mills;
   const tax = price * DATA.global.tax.primary_assessment_ratio * (mills/1000) / 12;
@@ -305,6 +321,109 @@ function solveMaxPrice(inc, down, rate, hoa, dtiPct){
   // is the one direction of error that actually costs something.
   return { feasible:true, price:lo };
 }
+/* ---------------- AMORTIZATION ----------------
+
+   A second implementation of analyzer/core/amortization.py, and the only reason that is
+   acceptable is tests/test_amortization_parity.py, which runs this file under node and
+   compares every one of the 360 rows against Python. Same arrangement as solveMaxPrice
+   above: ADR 0008 says duplicated *rules* get compiled into data.json, but a loop is
+   behaviour and there is nothing to compile, so the drift is caught by a test instead.
+
+   Three things here are copied deliberately and must not be "simplified":
+
+   1. Money is integer cents. 360 sequential operations on one running balance is enough
+      for float error to show up as a closing balance of -0.004.
+   2. Math.round is half-up for positive numbers, which is what Python's ROUND_HALF_UP
+      does and what a servicer does. Money here is always positive so the two agree.
+   3. The last scheduled payment is the balance plus interest, not the level payment.
+      Without that a 30-year note bills 361 payments, the last for $3.31.
+*/
+function amortize(loan, rate, term, extraMonthly){
+  const loanCents = Math.round(loan*100);
+  const payCents = Math.round(pmt(loan, rate, term)*100);
+  const extraCents = Math.round((extraMonthly||0)*100);
+  const r = rate/12;
+  let balance = loanCents;
+  const rows = [];
+  // Bounded, not while(balance>0). An unbounded loop on a page can hang the tab, and the
+  // guard is the same 1200 the Python module uses.
+  for(let i=0; i<1200 && balance>0; i++){
+    const interest = Math.round(balance*r);
+    // Negative amortization: the payment never covers the interest, so the balance grows.
+    // Unreachable while the payment is derived from the loan above -- kept so that adding
+    // a payment override fails here instead of silently billing forever.
+    if(payCents + extraCents <= interest && balance > payCents + extraCents) return null;
+    let principal = payCents - interest;
+    let extra = extraCents;
+    if(rows.length + 1 >= term){ principal = balance; extra = 0; }
+    else if(principal >= balance){ principal = balance; extra = 0; }
+    else if(principal + extra >= balance){ extra = balance - principal; }
+    balance -= principal + extra;
+    rows.push({interest, principal, extra, balance});
+  }
+  if(balance > 0) return null;
+
+  let crossover = null, totalInterest = 0;
+  const payments = rows.map((row,i)=>{
+    totalInterest += row.interest;
+    if(crossover === null && row.principal + row.extra >= row.interest) crossover = i+1;
+    return {
+      number:i+1,
+      payment:(row.interest+row.principal+row.extra)/100,
+      interest:row.interest/100,
+      principal:row.principal/100,
+      extra:row.extra/100,
+      balance:row.balance/100
+    };
+  });
+
+  const years = [];
+  for(let start=0; start<payments.length; start+=12){
+    const chunk = payments.slice(start, start+12);
+    years.push({
+      year:start/12+1,
+      payments:chunk.length,
+      interest:chunk.reduce((a,p)=>a+p.interest,0),
+      principal:chunk.reduce((a,p)=>a+p.principal,0),
+      extra:chunk.reduce((a,p)=>a+p.extra,0),
+      ending_balance:chunk[chunk.length-1].balance
+    });
+  }
+
+  let monthsSaved = 0, interestSaved = 0;
+  if(extraCents){
+    // Measured against the schedule this same function produces with no extra, not against
+    // a formula. A comparison to something the page would not actually draw is worthless.
+    const base = amortize(loan, rate, term, 0);
+    if(base){
+      monthsSaved = base.months_to_payoff - payments.length;
+      interestSaved = base.total_interest - totalInterest/100;
+    }
+  }
+
+  return {
+    loan_amount:loanCents/100,
+    scheduled_payment:payCents/100,
+    extra_monthly:extraCents/100,
+    payments, years,
+    total_interest:totalInterest/100,
+    total_principal:loanCents/100,
+    total_paid:(totalInterest+loanCents)/100,
+    months_to_payoff:payments.length,
+    final_payment:payments[payments.length-1].payment,
+    crossover_month:crossover,
+    months_saved:monthsSaved,
+    interest_saved:interestSaved
+  };
+}
+// Pulled out of pitiParts so the schedule and the PITI block cannot disagree about the
+// level payment, the same reason the Python schedule imports cost.monthly_payment.
+function pmt(loan, rate, n){
+  if(loan <= 0) return 0;
+  const r = rate/12;
+  return r>0 ? loan*(r*Math.pow(1+r,n))/(Math.pow(1+r,n)-1) : loan/n;
+}
+
 function renderMaxPrice(inc, down, rate, hoa, dtiPct){
   const el = document.getElementById('k-maxp');
   const dEl = document.getElementById('k-maxp-d');
@@ -331,6 +450,105 @@ function renderMaxPrice(inc, down, rate, hoa, dtiPct){
   const target = readNum('i-price');
   const headroom = p - target;
   note.innerHTML = `<b>Lender basis: ${fmt$(p)}</b> at a ${dtiPct}% front-end DTI cap. That is PITI only, which is what a pre-approval letter shows. It excludes the maintenance reserve — the CLI and API return a second, lower <i>household</i> number that funds it.${pmi} Against your ${fmt$(target)} working price that is ${fmt$(Math.abs(headroom))} of ${headroom>=0?'headroom':'overshoot'}, which is the point: DTI is not the binding constraint at this income. Cash to close and the appraisal are.`;
+}
+
+function renderAmortization(price, down, rate){
+  const loan = Math.max(0, price - down);
+  const extra = readNum('i-extra');
+  document.getElementById('l-extra').textContent = fmt$(extra);
+  const $ = id => document.getElementById(id);
+
+  const s = amortize(loan, rate, 360, extra);
+  if(!s){
+    // amortize returns null rather than a partial schedule. Say so instead of drawing an
+    // empty chart, which reads as a broken page rather than an impossible input.
+    ['a-pmt','a-int','a-cross','a-payoff'].forEach(id=>$(id).textContent='—');
+    $('a-extra-note').innerHTML = '<b>No schedule at these inputs.</b> With no loan there is nothing to amortize — raise the price above the down payment.';
+    $('a-body').innerHTML = '';
+    if(SPLIT_CHART){ SPLIT_CHART.destroy(); SPLIT_CHART=null; }
+    if(BAL_CHART){ BAL_CHART.destroy(); BAL_CHART=null; }
+    $('a-excludes').innerHTML = '';
+    return;
+  }
+
+  const yrs = Math.floor(s.months_to_payoff/12), mos = s.months_to_payoff%12;
+  const term = t => yrs===0 ? `${mos} mo` : (mos===0 ? `${yrs} yr` : `${yrs} yr ${mos} mo`);
+
+  $('a-pmt').textContent = fmt$(s.scheduled_payment);
+  $('a-pmt-d').textContent = extra>0 ? `Plus ${fmt$(extra)} extra = ${fmt$(s.scheduled_payment+extra)}` : '30-yr fixed, principal & interest';
+  $('a-int').textContent = fmt$(s.total_interest);
+  // Interest as a share of the loan is the line that actually lands. "$280,540" is abstract;
+  // "132% of what you borrowed" is not.
+  $('a-int-d').textContent = loan>0 ? `${(s.total_interest/loan*100).toFixed(0)}% of the ${fmt$(loan)} borrowed` : '—';
+
+  if(s.crossover_month){
+    const cy = (s.crossover_month/12);
+    $('a-cross').textContent = `#${s.crossover_month}`;
+    $('a-cross-d').textContent = `Year ${cy.toFixed(1)} of ${(s.months_to_payoff/12).toFixed(1)}`;
+  } else {
+    $('a-cross').textContent = '—';
+    $('a-cross-d').textContent = 'Never — interest leads throughout';
+  }
+  $('a-payoff').textContent = term();
+  $('a-payoff-d').textContent = `${s.months_to_payoff} payments, last one ${fmt$(s.final_payment)}`;
+
+  if(extra>0 && s.months_saved>0){
+    const sy = Math.floor(s.months_saved/12), sm = s.months_saved%12;
+    $('a-extra-note').innerHTML = `<b>${fmt$(extra)}/mo extra ends the loan ${sy} yr ${sm} mo early and saves ${fmt$(s.interest_saved)} in interest.</b> That assumes the extra payment starts with payment 1 and never stops, which no real budget guarantees — treat it as the ceiling, not a forecast. Extra principal does not reduce your tax, insurance or HOA, so the monthly outlay does not fall until the loan is gone.`;
+  } else {
+    $('a-extra-note').innerHTML = `<b>Nothing extra.</b> Drag the slider to see what prepaying principal does — at these terms the first payment is ${fmt$(s.payments[0].interest)} interest against ${fmt$(s.payments[0].principal)} of principal, so early extra dollars are the ones that count.`;
+  }
+
+  // The excludes list is spelled out here for the same reason the CLI and the API spell it
+  // out: this number is smaller than PITI and the gap is the thing people misread.
+  const piti = pitiParts(price, down, rate, readNum('i-hoa')).piti;
+  $('a-excludes').innerHTML = `<b>This is the loan, not the payment.</b> ${fmt$(s.scheduled_payment)} is principal and interest. Excluded: property tax, homeowners insurance, HOA dues, mortgage insurance. The Affordability section above puts the full monthly housing cost at ${fmt$(piti)} — a ${fmt$(piti-s.scheduled_payment)}/mo difference that does not amortize and does not shrink when you prepay.`;
+
+  const rows = s.years.map(y=>`<tr><td>${y.year}</td><td style="text-align:right">${fmt$(y.interest)}</td><td style="text-align:right">${fmt$(y.principal)}</td><td style="text-align:right">${y.extra>0?fmt$(y.extra):'—'}</td><td style="text-align:right">${fmt$(y.ending_balance)}</td></tr>`);
+  $('a-body').innerHTML = rows.join('');
+
+  const text = getCss('--text-muted'), grid = getCss('--divider');
+  const labels = s.payments.map(p=>p.number);
+
+  const sctx = $('split-chart');
+  if(SPLIT_CHART) SPLIT_CHART.destroy();
+  SPLIT_CHART = new Chart(sctx,{
+    type:'line',
+    data:{labels,datasets:[
+      {label:'Interest',data:s.payments.map(p=>p.interest),borderColor:getCss('--red'),backgroundColor:'rgba(224,103,103,.10)',fill:true,tension:.1,pointRadius:0,borderWidth:2},
+      {label:'Principal',data:s.payments.map(p=>p.principal+p.extra),borderColor:getCss('--primary'),backgroundColor:'rgba(125,211,192,.10)',fill:true,tension:.1,pointRadius:0,borderWidth:2}
+    ]},
+    options:{
+      animation:false, responsive:true, maintainAspectRatio:false,
+      scales:{
+        x:{grid:{color:grid},ticks:{color:text,font:{size:11},maxTicksLimit:7,callback:function(v){const n=this.getLabelForValue(v);return 'yr '+Math.ceil(n/12);}}},
+        y:{grid:{color:grid},ticks:{color:text,font:{size:11},callback:v=>'$'+v.toFixed(0)}}
+      },
+      plugins:{legend:{labels:{color:text,font:{size:11}}},tooltip:{callbacks:{title:i=>'Payment '+i[0].label,label:c=>c.dataset.label+': '+fmt$(c.parsed.y)}}}
+    }
+  });
+
+  const bctx = $('bal-chart');
+  if(BAL_CHART) BAL_CHART.destroy();
+  const datasets = [{label:'Balance',data:s.payments.map(p=>p.balance),borderColor:getCss('--primary'),backgroundColor:'rgba(125,211,192,.10)',fill:true,tension:.1,pointRadius:0,borderWidth:2}];
+  if(extra>0){
+    // Drawn from the same amortize() call the savings figure came from, so the curve and
+    // the number in the callout cannot disagree.
+    const base = amortize(loan, rate, 360, 0);
+    if(base) datasets.push({label:'Without extra',data:base.payments.map(p=>p.balance),borderColor:getCss('--gold'),borderDash:[6,4],pointRadius:0,borderWidth:1.5,fill:false});
+  }
+  BAL_CHART = new Chart(bctx,{
+    type:'line',
+    data:{labels:extra>0?Array.from({length:360},(_,i)=>i+1):labels,datasets},
+    options:{
+      animation:false, responsive:true, maintainAspectRatio:false,
+      scales:{
+        x:{grid:{color:grid},ticks:{color:text,font:{size:11},maxTicksLimit:7,callback:function(v){const n=this.getLabelForValue(v);return 'yr '+Math.ceil(n/12);}}},
+        y:{grid:{color:grid},ticks:{color:text,font:{size:11},callback:v=>'$'+(v/1000).toFixed(0)+'K'}}
+      },
+      plugins:{legend:{labels:{color:text,font:{size:11}}},tooltip:{callbacks:{title:i=>'Payment '+i[0].label,label:c=>c.dataset.label+': '+fmt$(c.parsed.y)}}}
+    }
+  });
 }
 
 /* ---------------- RENT VS BUY ---------------- */

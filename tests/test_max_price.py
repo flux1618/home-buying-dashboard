@@ -239,6 +239,11 @@ class TestTheTwoDoorsAgree:
     global.DATA = {global:{tax:{typical_owner_millage_mills:MILLS,
       primary_assessment_ratio:RATIO},insurance:{sc_avg_annual:INS}}};
     const src = require('fs').readFileSync(APPJS,'utf8');
+    // pitiParts calls pmt, which lives further down the file next to the schedule. Eval it
+    // first or this harness dies with "pmt is not defined" -- which is how this line got
+    // written: extracting the payment formula out of pitiParts so the amortization section
+    // could share it broke exactly this test, on the first full run after the refactor.
+    eval(src.match(/function pmt\([\s\S]*?\n}\n/)[0]);
     eval(src.match(/function pitiParts[\s\S]*?\n}\nfunction solveMaxPrice[\s\S]*?\n}\n/)[0]);
     const s = solveMaxPrice(INC, DOWN, RATE, HOA, DTI);
     console.log(JSON.stringify(s));
@@ -246,12 +251,19 @@ class TestTheTwoDoorsAgree:
 
     def js_solve(self, profile, dti_pct, hoa=0.0):
         import json
+        import os
         import shutil
         import subprocess
         from pathlib import Path
 
         node = shutil.which("node")
         if not node:
+            # A parity test that skips is a green tick that checked nothing. Locally that is the
+            # right trade -- not every machine has node and the suite should still run. In CI it
+            # is a false pass, so the workflow sets HBA_REQUIRE_NODE=1 and this turns into a
+            # failure instead.
+            if os.environ.get("HBA_REQUIRE_NODE"):
+                pytest.fail("HBA_REQUIRE_NODE is set but node is not installed; page parity would have been skipped")
             pytest.skip("node not installed; page parity unchecked in this environment")
         repo = Path(__file__).resolve().parents[1]
         snapshot = json.loads((repo / "data.json").read_text())
