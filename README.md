@@ -123,14 +123,14 @@ That's a repeatable workflow for me, that is open to change, but has utility whe
 1. Amortization calculator
 2.  Actual pipeline with normalized data storage on repo
 3. Regenerating nightly data in data/parcels.parquet with Github actions. county REST service, return tax pin, assessed value, tax district, school attendance zone, and last sale
-4. Scenario Solver where I can input down payment, rate, insurance, HOA, fees and shows me monthly PITI plus max price which PITI stays under a % of income
-5. rate sensitivity band that plot at the same houses with 5.0% to 7.5% with 30 year at 6.5% that includes  oscillation within a few base points weekly, defining the payment delta to inform buy or wait decision
-6. Watcher to push notifications
-7. Natural language evaluation to query on tool
-8. Market velocity
-9. open API for spartanburg area GIS, that includes parcels, assessed values, service districts, and voting/school boundaries
-10. FRED  MORTGAGE30US , the Freddie Mac 30-year average, weekly each Thursday, free API key
-11. tax benefit: SC applies a 4% assessment ratio to owner-occupied legal residences versus 6% for everything else, and the legal-residence exemption also removes school operating millage
+4. rate sensitivity band that plot at the same houses with 5.0% to 7.5% with 30 year at 6.5% that includes  oscillation within a few base points weekly, defining the payment delta to inform buy or wait decision
+5. Watcher to push notifications
+6. Natural language evaluation to query on tool
+7. Market velocity
+8. open API for spartanburg area GIS, that includes parcels, assessed values, service districts, and voting/school boundaries
+9. FRED  MORTGAGE30US , the Freddie Mac 30-year average, weekly each Thursday, free API key
+
+Built and removed from this list: the scenario solver ([ADR 0010](docs/adr/0010-inverse-affordability-is-two-answers.md)) and the SC 4% vs 6% assessment ratio with the school operating millage removed for legal residence.
 
 
 ## To Do Roadmap
