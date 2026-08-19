@@ -27,6 +27,23 @@ with open(REPO / "buyer_profile.toml", "rb") as fh:
 HAZ = SNAPSHOT.get("hazards")
 
 
+def load_builder():
+    """Import tools/build_hazard_snapshot.py by path, not by module name.
+
+    `tools/` is a directory of scripts, not an installed package, so `import tools...`
+    only works when the repo root happens to be on sys.path. It did locally and did not
+    in CI, which is a worse failure than it looks: the tests below would have silently
+    stopped covering the checker on any machine that imported differently.
+    """
+    import importlib.util
+
+    path = REPO / "tools" / "build_hazard_snapshot.py"
+    spec = importlib.util.spec_from_file_location("build_hazard_snapshot", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
 @pytest.fixture
 def haz():
     assert HAZ, "data.json has no hazards block; run tools/build_hazard_snapshot.py"
@@ -219,24 +236,24 @@ class TestProvenance:
 
 class TestTheCheckerCatchesDrift:
     def test_check_passes_on_the_committed_snapshot(self, capsys):
-        from tools import build_hazard_snapshot as b
+        b = load_builder()
 
         assert b.check(SNAPSHOT) == 0
 
     def test_check_fails_when_the_key_is_missing(self):
-        from tools import build_hazard_snapshot as b
+        b = load_builder()
 
         assert b.check({}) == 1
 
     def test_check_fails_when_the_codes_drift_from_the_profile(self):
-        from tools import build_hazard_snapshot as b
+        b = load_builder()
 
         mutated = json.loads(json.dumps(SNAPSHOT))
         mutated["hazards"]["hazard_codes"] = ["WFIR"]
         assert b.check(mutated) == 1
 
     def test_check_fails_when_a_county_hazard_is_absent(self):
-        from tools import build_hazard_snapshot as b
+        b = load_builder()
 
         mutated = json.loads(json.dumps(SNAPSHOT))
         mutated["hazards"]["county"]["hazards"].pop("WFIR")
@@ -245,6 +262,6 @@ class TestTheCheckerCatchesDrift:
     def test_check_does_not_hit_the_network(self, no_network):
         """`--check` is a CI job. A federal dataset being republished is not a build
         failure, and a check that phones FEMA would make it one."""
-        from tools import build_hazard_snapshot as b
+        b = load_builder()
 
         assert b.check(SNAPSHOT) == 0
