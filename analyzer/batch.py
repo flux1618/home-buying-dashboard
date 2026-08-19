@@ -32,7 +32,7 @@ import re
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Iterable, Sequence
+from typing import Any, Callable, Iterable, Sequence, TextIO
 
 from .core.profile import BuyerProfile, load_profile
 from .pipeline import PipelineAborted, PipelineRun, run
@@ -205,14 +205,26 @@ class RejectedRow:
 
 
 def read_shortlist(path: Path) -> tuple[list[ShortlistRow], list[RejectedRow], list[str]]:
-    """Parse and validate the whole file, touching no network.
+    """Parse and validate a shortlist file, touching no network.
+
+    Thin wrapper over `parse_shortlist_text` so the filename can appear in the error
+    message. The parsing itself takes text rather than a path because the HTTP service
+    receives an upload, not a file on disk, and duplicating the validation for that
+    caller is exactly how the CLI and the API drift apart.
+    """
+    return parse_shortlist_text(path.read_text(encoding="utf-8-sig"), source=path.name)
+
+
+def parse_shortlist_text(
+    text: str, *, source: str = "shortlist"
+) -> tuple[list[ShortlistRow], list[RejectedRow], list[str]]:
+    """Parse and validate shortlist CSV text.
 
     Returns accepted rows, rejected rows with reasons, and unrecognised headers. Reading is
     fully separated from analysing so `--dry-run` can validate a file offline in
     milliseconds — worth having when the alternative is discovering a bad column on row 9
     of a run that has already made forty HTTP requests.
     """
-    text = path.read_text(encoding="utf-8-sig")
     reader = csv.DictReader(text.splitlines())
     mapping, unknown = map_columns(reader.fieldnames)
 
@@ -220,7 +232,7 @@ def read_shortlist(path: Path) -> tuple[list[ShortlistRow], list[RejectedRow], l
     if missing:
         found = ", ".join(reader.fieldnames or []) or "nothing"
         raise RowError(
-            f"{path.name} is missing a required column: {', '.join(missing)}. "
+            f"{source} is missing a required column: {', '.join(missing)}. "
             f"Found: {found}"
         )
 
@@ -325,7 +337,7 @@ def analyse_shortlist(
     *,
     profile: BuyerProfile | None = None,
     progress: Callable[[ShortlistRow, BatchEntry], None] | None = None,
-    runner: Callable[..., PipelineRun] = run,
+    runner: Callable[..., PipelineRun] | None = None,
 ) -> list[BatchEntry]:
     """Analyse every row. A row that fails outright becomes an entry with an error.
 
@@ -334,11 +346,17 @@ def analyse_shortlist(
     Firing ten concurrent requests at a county GIS server to save nine seconds on a
     weekend shortlist is how a useful public service gets locked down.
     """
+    # Resolved at call time, not bound as a default argument. `runner: Callable = run`
+    # captures whatever `run` was at import, which quietly defeats monkeypatching the
+    # module attribute — a test that thought it had stubbed the pipeline would make real
+    # requests to the Census geocoder and pass. The socket guard in conftest caught
+    # exactly that, and late binding is the fix rather than a louder warning.
+    resolved_runner = runner if runner is not None else run
     resolved = profile or load_profile()
     entries: list[BatchEntry] = []
 
     for row in rows:
-        entry = _analyse_row(row, resolved, runner)
+        entry = _analyse_row(row, resolved, resolved_runner)
         entries.append(entry)
         if progress:
             progress(row, entry)
@@ -455,12 +473,22 @@ def summary_rows(result: BatchResult) -> list[dict[str, Any]]:
     return rows
 
 
+def write_summary_stream(result: BatchResult, handle: TextIO) -> None:
+    """Write the summary to any text stream.
+
+    Streams rather than paths because the HTTP service returns the CSV in a response
+    body and never has a directory to write into. Same rows, same column order, one
+    implementation.
+    """
+    writer = csv.DictWriter(handle, fieldnames=SUMMARY_COLUMNS, extrasaction="ignore")
+    writer.writeheader()
+    writer.writerows(summary_rows(result))
+
+
 def write_summary_csv(result: BatchResult, path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", newline="", encoding="utf-8") as handle:
-        writer = csv.DictWriter(handle, fieldnames=SUMMARY_COLUMNS, extrasaction="ignore")
-        writer.writeheader()
-        writer.writerows(summary_rows(result))
+        write_summary_stream(result, handle)
 
 
 def slug(text: str) -> str:
@@ -480,6 +508,11 @@ def write_documents(result: BatchResult, directory: Path) -> list[Path]:
 
 
 def write_markdown(result: BatchResult, path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(render_markdown(result), encoding="utf-8")
+
+
+def render_markdown(result: BatchResult) -> str:
     """A comparison table you can read on a phone in a driveway."""
     lines = [
         "# Shortlist comparison",
@@ -557,8 +590,7 @@ def write_markdown(result: BatchResult, path: Path) -> None:
                   f"These headers were not recognised and had no effect: "
                   f"{', '.join(result.unknown_headers)}."]
 
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return "\n".join(lines) + "\n"
 
 
 # =============================================================================

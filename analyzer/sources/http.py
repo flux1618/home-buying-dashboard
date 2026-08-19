@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import time
 import urllib.error
 import urllib.parse
@@ -39,7 +40,15 @@ USER_AGENT = (
 
 DEFAULT_TIMEOUT = 20.0
 DEFAULT_RETRIES = 2
-CACHE_DIR = Path.home() / ".cache" / "home-buying-dashboard"
+# Overridable so the container can point it at a mounted volume. In an image the home
+# directory is ephemeral, so the default would put the cache inside the container's
+# writable layer and throw it away on every restart — which means re-asking a free county
+# GIS server for parcel facts it already gave us. `HBA_CACHE_DIR` is read at import so a
+# deployment can set it once in the environment rather than threading it through calls.
+CACHE_DIR = Path(
+    os.environ.get("HBA_CACHE_DIR")
+    or Path.home() / ".cache" / "home-buying-dashboard"
+)
 CACHE_TTL_SECONDS = 7 * 24 * 3600
 
 # Volunteer-run services. The gap is not optional.

@@ -11,6 +11,13 @@ __pycache__/
 *.egg-info/
 .venv/
 venv/
+build/
+dist/
+
+# Batch run outputs. These contain addresses and full financial analyses of real
+# properties, which is exactly the kind of thing that should not land in a public repo
+# by accident. Default --out-dir is runs/.
+runs/
 
 # Local profile overrides with real financial figures
 buyer_profile.local.toml

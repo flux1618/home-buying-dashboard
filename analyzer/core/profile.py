@@ -9,11 +9,24 @@ TOML is read with stdlib `tomllib` (3.11+), so `core/` stays dependency-free per
 
 from __future__ import annotations
 
+import os
 import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
 
-DEFAULT_PROFILE_PATH = Path(__file__).resolve().parents[2] / "buyer_profile.toml"
+# Two ways to find the rulebook, in priority order.
+#
+# `HBA_PROFILE` exists because the path-relative default only works when the code is run
+# from a source checkout. Once the package is pip-installed — which is exactly what the
+# container does — `parents[2]` resolves into site-packages, where no profile lives. The
+# env var lets a deployment say where the config is instead of inferring it from where the
+# code happens to be sitting.
+#
+# Note this is stdlib `os` only, so ADR 0002's purity rule still holds.
+DEFAULT_PROFILE_PATH = Path(
+    os.environ.get("HBA_PROFILE")
+    or Path(__file__).resolve().parents[2] / "buyer_profile.toml"
+)
 
 
 @dataclass(frozen=True)
