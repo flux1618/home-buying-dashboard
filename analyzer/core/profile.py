@@ -14,19 +14,34 @@ import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
 
-# Two ways to find the rulebook, in priority order.
+# The rulebook is deployment configuration, not package data, so it has to be *found*
+# rather than assumed. Three places are searched, in this order:
 #
-# `HBA_PROFILE` exists because the path-relative default only works when the code is run
-# from a source checkout. Once the package is pip-installed — which is exactly what the
-# container does — `parents[2]` resolves into site-packages, where no profile lives. The
-# env var lets a deployment say where the config is instead of inferring it from where the
-# code happens to be sitting.
+#   1. $HBA_PROFILE          — an explicit answer always wins
+#   2. next to the package   — correct in a source checkout
+#   3. the working directory — correct when the package is installed but config is local
 #
-# Note this is stdlib `os` only, so ADR 0002's purity rule still holds.
-DEFAULT_PROFILE_PATH = Path(
-    os.environ.get("HBA_PROFILE")
-    or Path(__file__).resolve().parents[2] / "buyer_profile.toml"
-)
+# Step 2 alone was the original implementation and it is subtly wrong: once the package is
+# pip-installed, `parents[2]` resolves inside site-packages, where no profile lives. That
+# broke the container (it started fine and failed on the first request) and then broke CI,
+# where installing the package made the tests import from site-packages. Step 3 is what
+# makes "run it from the repo" work regardless of how the code was installed.
+#
+# Resolved at call time, not import time. An import-time constant cannot be influenced by a
+# test fixture or a late environment change, which is a genuinely confusing failure: you set
+# the variable, and the value was frozen three imports ago.
+#
+# stdlib `os` only, so ADR 0002's purity rule still holds.
+def default_profile_path() -> Path:
+    override = os.environ.get("HBA_PROFILE")
+    if override:
+        return Path(override)
+
+    beside_package = Path(__file__).resolve().parents[2] / "buyer_profile.toml"
+    if beside_package.exists():
+        return beside_package
+
+    return Path.cwd() / "buyer_profile.toml"
 
 
 @dataclass(frozen=True)
@@ -92,7 +107,14 @@ class BuyerProfile:
 
 
 def load_profile(path: Path | str | None = None) -> BuyerProfile:
-    path = Path(path) if path else DEFAULT_PROFILE_PATH
+    path = Path(path) if path else default_profile_path()
+    if not path.exists():
+        # A bare FileNotFoundError pointing into site-packages sends people looking for a
+        # packaging bug. The actual problem is almost always "the config is somewhere else".
+        raise FileNotFoundError(
+            f"buyer profile not found at {path}. Set HBA_PROFILE to its location, or run "
+            f"from a directory containing buyer_profile.toml."
+        )
     with open(path, "rb") as fh:
         raw = tomllib.load(fh)
 

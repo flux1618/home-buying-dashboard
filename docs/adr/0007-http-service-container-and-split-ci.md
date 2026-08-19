@@ -97,12 +97,28 @@ tested where it runs.
 prebuilt arm64 wheels for 3.12; on a version without them, an arm64 build compiles from
 source under QEMU emulation and takes tens of minutes.
 
-**Configuration comes from the environment: `HBA_PROFILE` and `HBA_CACHE_DIR`.** This was
-not planned — it was forced by a bug. `load_profile()` located `buyer_profile.toml` by
-walking up from its own file, which works in a source checkout and breaks the moment the
-package is pip-installed, because the path then resolves inside `site-packages`. The
-container would have started cleanly and failed on the first request. Both env vars are read
-with stdlib `os`, so ADR 0002 still holds.
+**The rulebook is located by a search order, not by a path expression.** `HBA_PROFILE`, then
+beside the package, then the working directory — resolved at call time. `HBA_CACHE_DIR`
+works the same way. Both are read with stdlib `os`, so ADR 0002 still holds.
+
+This was not planned. `load_profile()` originally found `buyer_profile.toml` by walking up
+from its own source file, which is correct in a checkout and wrong the instant the package
+is pip-installed, because the path then resolves inside `site-packages`. That one assumption
+broke two things in sequence:
+
+1. The **container** started cleanly and failed on its first request. Caught locally by
+   installing into a bare virtualenv and running it the way the image does.
+2. **CI**, immediately after — roughly 200 tests died with a `FileNotFoundError` pointing at
+   a site-packages directory nobody had ever put config in. `pytest` does not add the working
+   directory to `sys.path` (unlike `python -m pytest`), so the installed copy was imported
+   and the beside-package lookup missed.
+
+The first fix was a single env var, which would have left the second failure latent. The
+search order is the actual fix, and it is resolved at call time rather than as a module
+constant: a constant is computed once at import, so setting the variable from a fixture or an
+entrypoint has no effect, and the code doing the setting looks correct while being useless.
+`tests/test_profile_location.py` pins all three branches and the not-frozen-at-import
+property.
 
 **Only config is copied into the runtime stage; the code lives in the venv.** Copying the
 source tree as well would leave two copies of every module in the image, and which one ran
@@ -126,6 +142,12 @@ Two workflows, divided by what a failure *means*:
 3.13, the stdlib-only purity job, CLI and batch entry points via `--dry-run`, and a
 multi-arch container build followed by a single-arch load and smoke test. Nothing here
 touches the network. A red build means a commit broke something.
+
+The test jobs install **editable** (`pip install -e`). A non-editable install puts a copy in
+`site-packages`, and since `pytest` does not add the working directory to `sys.path`, the
+suite would test that copy instead of the commit — a very quiet way for CI to stop verifying
+the thing in front of it. The purity job is the deliberate exception: it installs
+non-editable precisely *because* it needs to exercise the installed layout.
 
 **`live.yml` runs nightly on a schedule.** `pytest -m live` against the real endpoints,
 plus one full CLI analysis of a real address. A failure means an assumption about someone
@@ -181,7 +203,8 @@ stdlib-only core is worth more than concurrency this workload does not need.
 - The nightly workflow can open an issue for a problem that fixes itself by morning, and
   the issue stays open until someone closes it.
 - The container build could not be verified in the environment where it was written, since
-  Docker was unavailable there. Its first real execution is in CI.
+  Docker was unavailable there. Its first real execution was in CI, where both architectures
+  built and the smoke test booted on the first attempt.
 
 **Cost if wrong**
 
