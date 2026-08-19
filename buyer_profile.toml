@@ -46,17 +46,34 @@ no_fiber      = 15
 garage_under  = 10
 baths_under   = 8
 
+# Aging systems with a four- or five-figure bill attached. These DO deduct — a note
+# alone let a house with a $14,000 roof score a perfect 100. Dollar ranges live in
+# analyzer/core/capex.py with sources.
+[capital_expenses]
+roof_due_age     = 15   # at or past service life — budget it
+roof_overdue_age = 20   # assume replacement is immediate
+hvac_due_age     = 12
+hvac_overdue_age = 18
+
+[capital_expenses.penalties]
+roof_due     = 25
+roof_overdue = 35
+hvac_due     = 15
+hvac_overdue = 22
+
 # Flagged for attention. No points deducted.
 [caveats]
-preferred_year_built_min = 2000
-roof_age_caveat_years    = 15
-hvac_age_caveat_years    = 12
+preferred_year_built_min = 2000   # age alone is a note, never a deduction
 max_price_over_target_pct = 0.10
 max_price_per_sqft        = 200
 
 [verdict]
 take_min  = 75   # >= this: strong fit, take to inspection
-watch_min = 50   # >= this: watch, negotiate or wait. Below: pass.
+watch_min = 45   # >= this: watch, negotiate or wait. Below: pass.
+
+# Score pinned when a hard-fail input could not be evaluated. Lands in WATCH so an
+# unknown is never mistaken for a clean TAKE, and never for a rejection either.
+unevaluated_score = 50
 
 # Commute anchors. First entry is primary. Rush hour is the 7a hospital shift change,
 # not generic office peak.

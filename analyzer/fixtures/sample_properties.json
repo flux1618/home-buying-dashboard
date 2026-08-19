@@ -1,6 +1,6 @@
 [
   {
-    "label": "Clean fit — Boiling Springs",
+    "label": "Clean fit \u2014 Boiling Springs",
     "address": "412 Maple Ridge Dr, Boiling Springs, SC 29316",
     "price": 312000,
     "sqft": 1780,
@@ -17,7 +17,7 @@
     "fiber_available": true
   },
   {
-    "label": "HOA over ceiling — still a candidate",
+    "label": "HOA over ceiling \u2014 still a candidate",
     "address": "88 Chestnut Commons Ln, Duncan, SC 29334",
     "price": 305000,
     "sqft": 1690,
@@ -34,7 +34,7 @@
     "fiber_available": true
   },
   {
-    "label": "Older home — caveat only, no deduction",
+    "label": "Older home \u2014 roof + HVAC both due",
     "address": "1140 Fernwood Glendale Rd, Spartanburg, SC 29307",
     "price": 268000,
     "sqft": 1620,
@@ -51,7 +51,7 @@
     "fiber_available": true
   },
   {
-    "label": "Small and no fiber — stacked deductions",
+    "label": "Small and no fiber \u2014 stacked deductions",
     "address": "27 Pine Hollow Ct, Inman, SC 29349",
     "price": 249000,
     "sqft": 1280,
@@ -68,7 +68,7 @@
     "fiber_available": false
   },
   {
-    "label": "Flood zone — hard fail",
+    "label": "Flood zone \u2014 hard fail",
     "address": "615 Lawsons Fork Rd, Spartanburg, SC 29302",
     "price": 295000,
     "sqft": 1900,
@@ -85,7 +85,7 @@
     "fiber_available": true
   },
   {
-    "label": "Septic — hard fail",
+    "label": "Septic \u2014 hard fail",
     "address": "3320 Old Furnace Rd, Chesnee, SC 29323",
     "price": 279000,
     "sqft": 2010,
@@ -102,7 +102,7 @@
     "fiber_available": false
   },
   {
-    "label": "Commute over limit — hard fail",
+    "label": "Commute over limit \u2014 hard fail",
     "address": "204 Ashmore Bridge Rd, Woodruff, SC 29388",
     "price": 258000,
     "sqft": 1720,
@@ -119,7 +119,7 @@
     "fiber_available": true
   },
   {
-    "label": "Unknowns — cannot be a clean TAKE",
+    "label": "Unknowns \u2014 cannot be a clean TAKE",
     "address": "77 Unverified Way, Spartanburg, SC 29301",
     "price": 318000,
     "sqft": 1800,
@@ -136,7 +136,7 @@
     "fiber_available": null
   },
   {
-    "label": "Borderline commute — 19.5 min, inside the limit",
+    "label": "Borderline commute \u2014 19.5 min, inside the limit",
     "address": "9 Anderson Mill Rd, Moore, SC 29369",
     "price": 322000,
     "sqft": 1850,
@@ -150,6 +150,23 @@
     "flood_zone": "X",
     "water_sewer": "public",
     "commute_min": 19.5,
+    "fiber_available": true
+  },
+  {
+    "label": "Overdue systems \u2014 five-figure bill on arrival",
+    "address": "18 Hillbrook Cir, Spartanburg, SC 29302",
+    "price": 262000,
+    "sqft": 2100,
+    "beds": 3,
+    "baths": 3,
+    "garage_spaces": 2,
+    "hoa_monthly": 0,
+    "year_built": 1996,
+    "roof_age_years": 24,
+    "hvac_age_years": 21,
+    "flood_zone": "X",
+    "water_sewer": "public",
+    "commute_min": 13.5,
     "fiber_available": true
   }
 ]

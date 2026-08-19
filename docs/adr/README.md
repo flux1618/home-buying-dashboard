@@ -10,3 +10,4 @@ Format is deliberately lightweight — context, decision, alternatives, conseque
 | [0002](0002-pure-scoring-core.md) | Scoring engine is a pure Python package with no framework or network | Accepted |
 | [0003](0003-no-listing-or-mls-extraction.md) | No Zillow/Redfin extraction and no MLS integration | Accepted |
 | [0004](0004-llm-scope-boundary.md) | LLMs do extraction only and never arithmetic | Accepted |
+| [0005](0005-capital-expenses-deduct-and-unknowns-pin.md) | Aging roof/HVAC deduct with a dollar range; unknown hard-fail inputs pin the score to 50 | Accepted |

@@ -102,10 +102,29 @@ class TestUnevaluatedHardFails:
         assert r.verdict == scoring.VERDICT_WATCH
         assert len(r.unevaluated_hard_fails) == 1
 
-    def test_unknown_does_not_zero_the_score(self, profile):
-        """Unknown is not a failure — it is an unresolved question."""
+    def test_unknown_pins_the_score_to_fifty(self, profile):
+        """Unknown is not a failure and not a pass — it is an unresolved question.
+
+        Pinning to 50 lands it squarely in WATCH: worth following up, not worth an
+        offer, and visibly distinct from a house that earned its score.
+        """
         r = scoring.score(clean(flood_zone=None), profile, 2026)
-        assert r.value == 100
+        assert r.value == 50
+        assert r.score_pinned is True
+
+    def test_pin_only_lowers_never_raises(self, profile):
+        """A dead source must not flatter a genuinely weak house up to 50."""
+        r = scoring.score(
+            clean(flood_zone=None, sqft=1200, beds=2, baths=2, garage_spaces=1),
+            profile,
+            2026,
+        )
+        assert r.total_deducted == 58
+        assert r.value == 42
+        assert r.verdict == scoring.VERDICT_PASS
+
+    def test_fully_evaluated_property_is_not_pinned(self, profile):
+        assert scoring.score(clean(), profile, 2026).score_pinned is False
 
     def test_unknown_is_not_recorded_as_a_hard_fail(self, profile):
         r = scoring.score(clean(water_sewer=None), profile, 2026)
@@ -214,11 +233,23 @@ class TestVerdictBands:
             ({"hoa_monthly": 150.0}, scoring.VERDICT_TAKE),   # 75, at the boundary
             ({"sqft": 1200, "beds": 2}, scoring.VERDICT_WATCH),  # 60
             ({"sqft": 1200, "beds": 2, "baths": 2}, scoring.VERDICT_WATCH),  # 52
-            ({"sqft": 1200, "beds": 2, "fiber_available": False}, scoring.VERDICT_PASS),  # 45
+            ({"sqft": 1200, "beds": 2, "fiber_available": False}, scoring.VERDICT_WATCH),  # 45, floor
+            ({"sqft": 1200, "beds": 2, "fiber_available": False, "baths": 2}, scoring.VERDICT_PASS),  # 37
         ],
     )
     def test_bands(self, profile, overrides, verdict):
         assert scoring.score(clean(**overrides), profile, 2026).verdict == verdict
+
+    def test_watch_floor_is_forty_five(self, profile):
+        """Lowered from 50 so a stack of soft misses still earns a showing."""
+        assert profile.verdict_watch_min == 45
+        r = scoring.score(
+            clean(sqft=1280, baths=2, garage_spaces=1, fiber_available=False),
+            profile,
+            2026,
+        )
+        assert r.value == 47
+        assert r.verdict == scoring.VERDICT_WATCH
 
 
 class TestCaveats:
@@ -229,10 +260,22 @@ class TestCaveats:
         assert r.verdict == scoring.VERDICT_TAKE
         assert any("1978" in c for c in r.caveats)
 
-    def test_roof_and_hvac_age_flag_without_penalty(self, profile):
-        r = scoring.score(clean(roof_age_years=17, hvac_age_years=14), profile, 2026)
-        assert r.value == 100
-        assert len(r.caveats) == 2
+    def test_unknown_component_ages_on_an_old_house_are_flagged(self, profile):
+        """Missing ages mean the capex tier could not run, so the score is optimistic."""
+        r = scoring.score(
+            clean(year_built=1985, roof_age_years=None, hvac_age_years=None),
+            profile,
+            2026,
+        )
+        assert any("optimistic" in c for c in r.caveats)
+
+    def test_unknown_ages_on_a_new_house_are_not_flagged(self, profile):
+        r = scoring.score(
+            clean(year_built=2024, roof_age_years=None, hvac_age_years=None),
+            profile,
+            2026,
+        )
+        assert not any("optimistic" in c for c in r.caveats)
 
     def test_price_over_target_flags(self, profile):
         r = scoring.score(clean(price=400_000), profile, 2026)

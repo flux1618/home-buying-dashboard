@@ -1,13 +1,21 @@
 """The score. Pure function, no network, no model, fully reproducible.
 
-Three tiers, and the distinction matters:
+Four tiers, and the distinctions matter:
 
-  hard fails  -> score 0, verdict PASS. Disqualifying at any price.
-  deductions  -> points off 100. A house can fail these and still be a candidate.
-  caveats     -> zero points. Attention, not penalty.
+  hard fails        -> score 0, verdict PASS. Disqualifying at any price.
+  capital expenses  -> points off, scaled by how overdue. Carry a dollar range.
+  deductions        -> points off 100. A house can fail these and still be a candidate.
+  caveats           -> zero points. Attention, not penalty.
+
+Capital expenses are separated from ordinary deductions because they are different in
+kind. A small garage is a permanent compromise you accept at the price. A 17-year-old
+roof is a four- or five-figure bill arriving on a schedule, and it belongs in the
+number rather than in a footnote.
 
 A hard fail that could not be EVALUATED (missing input, dead source) never silently
-becomes a pass. The verdict is capped at WATCH and the reason is stated.
+becomes a pass. The score is pinned to `unevaluated_score` (50, landing in WATCH) and
+the unresolved question is named. Pinning rather than raising: the pin can only lower a
+score, never inflate one, so an unknown never helps a property.
 """
 
 from __future__ import annotations
@@ -15,6 +23,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+from . import capex
+from .capex import CapitalExpense
 from .profile import BuyerProfile
 
 VERDICT_TAKE = "TAKE"
@@ -53,20 +63,40 @@ class ScoreResult:
     hard_fails: list[str] = field(default_factory=list)
     unevaluated_hard_fails: list[str] = field(default_factory=list)
     deductions: list[dict[str, Any]] = field(default_factory=list)
+    capital_expenses: list[CapitalExpense] = field(default_factory=list)
     caveats: list[str] = field(default_factory=list)
+    score_pinned: bool = False
 
     @property
     def total_deducted(self) -> int:
+        """Preference deductions only. Capital expenses are counted separately."""
         return sum(d["points"] for d in self.deductions)
+
+    @property
+    def capex_deducted(self) -> int:
+        return sum(e.points for e in self.capital_expenses)
+
+    @property
+    def capex_low(self) -> float:
+        return sum(e.low for e in self.capital_expenses)
+
+    @property
+    def capex_high(self) -> float:
+        return sum(e.high for e in self.capital_expenses)
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "value": self.value,
             "verdict": self.verdict,
+            "score_pinned": self.score_pinned,
             "hard_fails": self.hard_fails,
             "unevaluated_hard_fails": self.unevaluated_hard_fails,
             "deductions": self.deductions,
             "total_deducted": self.total_deducted,
+            "capital_expenses": [e.to_dict() for e in self.capital_expenses],
+            "capex_deducted": self.capex_deducted,
+            "capex_estimate_low": self.capex_low,
+            "capex_estimate_high": self.capex_high,
             "caveats": self.caveats,
         }
 
@@ -155,9 +185,29 @@ def score(facts: PropertyFacts, profile: BuyerProfile, current_year: int) -> Sco
     if facts.baths is not None and facts.baths < profile.min_baths:
         deduct("baths_under", f"{facts.baths:g} baths, want {profile.min_baths}")
 
-    result.value = max(0, min(100, 100 - result.total_deducted))
+    # -- near-term capital expenses ------------------------------------------
+    # Separate tier: these carry a dollar range and deduct proportionally to how
+    # overdue the component is. See capex.py for the cost sources.
+
+    result.capital_expenses = capex.assess(
+        roof_age_years=facts.roof_age_years,
+        hvac_age_years=facts.hvac_age_years,
+        sqft=facts.sqft,
+        thresholds=profile.capex_thresholds,
+        penalties=profile.capex_penalties,
+    )
+
+    total = result.total_deducted + result.capex_deducted
+    result.value = max(0, min(100, 100 - total))
 
     # -- verdict -------------------------------------------------------------
+
+    # An unverified hard fail pins the score rather than letting it stand. Pinning is
+    # one-directional: it can only lower, so a missing data source never inflates a
+    # property's score into looking better than it is.
+    if result.unevaluated_hard_fails:
+        result.value = min(result.value, profile.unevaluated_score)
+        result.score_pinned = True
 
     if result.value >= profile.verdict_take_min:
         result.verdict = VERDICT_TAKE
@@ -166,7 +216,8 @@ def score(facts: PropertyFacts, profile: BuyerProfile, current_year: int) -> Sco
     else:
         result.verdict = VERDICT_PASS
 
-    # An unverified hard fail can never present as a clean TAKE.
+    # Belt and braces: whatever the arithmetic said, an unresolved hard fail is never
+    # a clean TAKE.
     if result.unevaluated_hard_fails and result.verdict == VERDICT_TAKE:
         result.verdict = VERDICT_WATCH
 
@@ -184,23 +235,29 @@ def _add_caveats(
     if facts.year_built and facts.year_built < profile.preferred_year_built_min:
         result.caveats.append(
             f"Built {facts.year_built}, before {profile.preferred_year_built_min} — "
-            f"noted as a caveat only, not a deduction. Expect older systems, wiring, "
-            f"and insulation."
+            f"age alone is a caveat, not a deduction. Expect older wiring and "
+            f"insulation. Specific aging systems are scored separately."
         )
-    if (
-        facts.roof_age_years is not None
-        and facts.roof_age_years >= profile.roof_age_caveat_years
-    ):
-        result.caveats.append(
-            f"Roof age {facts.roof_age_years} yrs — expect replacement; escrow or credit"
-        )
-    if (
-        facts.hvac_age_years is not None
-        and facts.hvac_age_years >= profile.hvac_age_caveat_years
-    ):
-        result.caveats.append(
-            f"HVAC age {facts.hvac_age_years} yrs — inspect and budget replacement"
-        )
+
+    # Ages that are UNKNOWN on an older house are their own risk: the capital-expense
+    # tier could not run, so the score is optimistic by omission. Say so.
+    old_enough_to_matter = (
+        facts.year_built is not None
+        and current_year - facts.year_built >= profile.capex_thresholds["hvac_due_age"]
+    )
+    if old_enough_to_matter:
+        unknown = [
+            name
+            for name, val in (("roof", facts.roof_age_years), ("HVAC", facts.hvac_age_years))
+            if val is None
+        ]
+        if unknown:
+            result.caveats.append(
+                f"{' and '.join(unknown)} age unknown on a "
+                f"{current_year - facts.year_built}-year-old house — no capital-expense "
+                f"deduction could be applied, so this score is optimistic until the "
+                f"seller's disclosure fills the gap"
+            )
 
     over = profile.target_price * (1 + profile.max_price_over_target_pct)
     if facts.price > over:

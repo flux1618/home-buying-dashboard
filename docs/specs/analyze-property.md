@@ -130,17 +130,46 @@ Pure function. No network, no model, fully reproducible.
 | Garage < 2 spaces | −10 |
 | Baths < 3 | −8 |
 
+**Near-term capital expenses — deduct, and carry a dollar range:**
+
+A component that is at or past its service life is a four- or five-figure bill arriving soon, not a footnote. These deduct separately from the preference list above and each one reports an estimated cost band scaled by living area.
+
+| Condition | Points | Urgency |
+|---|---|---|
+| Roof age ≥ 15 yrs | −25 | due |
+| Roof age ≥ 20 yrs | −35 | overdue |
+| HVAC age ≥ 12 yrs | −15 | due |
+| HVAC age ≥ 18 yrs | −22 | overdue |
+
+Cost bands, by living square footage:
+
+| Component | < 1,500 | 1,500–2,500 | > 2,500 | Sqft unknown |
+|---|---|---|---|---|
+| Roof | $6k–14k | $8k–18k | $12k–24k | $6k–19k |
+| HVAC | $6k–10k (<1,750) | $7k–12k / $8k–14k | $9k–16k | $7.5k–14.5k |
+
+Roof bands come from South Carolina replacement data — statewide average $7,738 across a $6,064–$19,016 range ([This Old House](https://www.thisoldhouse.com/roofing/roof-replacement-cost-south-carolina)), with a higher SC band of $9,000–$22,500 and asphalt at $4.50–$10.25/sqft installed ([Modernize](https://modernize.com/roof/cost-calculator/south-carolina)). HVAC bands are by home size: 1,500 sqft $6–10k, 2,000 sqft $7–12k, 2,500 sqft $8–14k, 3,000 sqft $9–16k ([USA Today](https://www.usatoday.com/story/money/home-services/hvac-replacement-cost/90313725007/)).
+
+Any item whose high estimate reaches $10,000 is tagged `five_figure`; anything reaching $5,000 makes the contractor-quote verification task **blocking**. An `overdue` item adds a second blocking task: confirm condition at the showing before paying for an inspection.
+
 **Caveat flags — no points deducted:**
 
-- Built before 2000
-- Roof age ≥ 15 years — expect replacement; escrow or credit
-- HVAC age ≥ 12 years — inspect and budget
+- Built before 2000 — age alone, never a deduction and never an exclusion
+- Roof or HVAC age unknown on a house at least 12 years old — the capital-expense tier could not run, so the score is optimistic by omission
 - Price > 10% above target
 - Above $200/sqft — check comps in the same ZIP
 
-**Verdict bands:** ≥ 75 strong fit, take to inspection · 50–74 watch, negotiate or wait · < 50 pass.
+**Unevaluated hard-fail inputs — score pinned to 50:**
 
-Clamped to 0–100.
+If a hard-fail input (flood zone, water/sewer, commute) is unknown rather than failing, every unknown is named in `unevaluated_hard_fails`, the score is pinned to 50, `score_pinned` is set, and the verdict is forced to WATCH with a follow-up task per unknown.
+
+The pin is **one-directional — it can only lower**. A house that scored 42 on its own merits stays at 42; a missing data source must never flatter a weak house upward. In practice the pin lands the property in WATCH, which is the intent: worth chasing down, not worth an offer.
+
+**Verdict bands:** ≥ 75 strong fit, take to inspection · 45–74 watch, negotiate or wait · < 45 pass.
+
+The watch floor is 45, not 50, so that a house missing several preferences but sound on fundamentals still earns a showing rather than being filtered out silently.
+
+Clamped to 0–100. Zero is reserved exclusively for hard fails — the preference deductions sum to 98 and the capital-expense tier stops at 57, so nothing else can reach it.
 
 ---
 

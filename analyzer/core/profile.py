@@ -52,15 +52,18 @@ class BuyerProfile:
     require_fiber: bool
     max_hoa_monthly: float
     penalties: dict[str, int]
+    # near-term capital expenses — age thresholds and their deductions
+    capex_thresholds: dict[str, int]
+    capex_penalties: dict[str, int]
     # caveats
     preferred_year_built_min: int
-    roof_age_caveat_years: int
-    hvac_age_caveat_years: int
     max_price_over_target_pct: float
     max_price_per_sqft: float
     # verdict bands
     verdict_take_min: int
     verdict_watch_min: int
+    # score assigned when a hard fail could not be evaluated
+    unevaluated_score: int
     anchors: tuple[Anchor, ...] = field(default_factory=tuple)
     millage_district: str | None = None
 
@@ -83,6 +86,7 @@ def load_profile(path: Path | str | None = None) -> BuyerProfile:
     fin = raw["finance"]
     hard = raw["hard_fails"]
     pref = raw["preferences"]
+    capex = raw["capital_expenses"]
     cav = raw["caveats"]
     verdict = raw["verdict"]
 
@@ -118,13 +122,14 @@ def load_profile(path: Path | str | None = None) -> BuyerProfile:
         require_fiber=pref["require_fiber"],
         max_hoa_monthly=pref["max_hoa_monthly"],
         penalties=dict(pref["penalties"]),
+        capex_thresholds={k: v for k, v in capex.items() if k.endswith("_age")},
+        capex_penalties=dict(capex["penalties"]),
         preferred_year_built_min=cav["preferred_year_built_min"],
-        roof_age_caveat_years=cav["roof_age_caveat_years"],
-        hvac_age_caveat_years=cav["hvac_age_caveat_years"],
         max_price_over_target_pct=cav["max_price_over_target_pct"],
         max_price_per_sqft=cav["max_price_per_sqft"],
         verdict_take_min=verdict["take_min"],
         verdict_watch_min=verdict["watch_min"],
+        unevaluated_score=verdict["unevaluated_score"],
         anchors=anchors,
         millage_district=raw.get("tax", {}).get("millage_district"),
     )

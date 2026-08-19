@@ -62,7 +62,7 @@ def summary(rows: list[dict], profile, year: int) -> None:
         f"{profile.primary_anchor.arrival_window}){OFF}\n"
     )
 
-    head = f"{'#':>2}  {'Property':<40} {'Price':>9} {'Score':>5} {'Verdict':<8} {'PITI':>8} {'True mo.':>16} {'DTI':>6}"
+    head = f"{'#':>2}  {'Property':<40} {'Price':>9} {'Score':>5} {'Verdict':<8} {'PITI':>8} {'True mo.':>16} {'DTI':>6} {'Capex':>9}"
     print(BOLD + head + OFF)
     print(DIM + "-" * len(head) + OFF)
 
@@ -73,14 +73,19 @@ def summary(rows: list[dict], profile, year: int) -> None:
         label = row["label"][:40]
         true_mo = f"${c['true_monthly_low']:,.0f}-{c['true_monthly_high']:,.0f}"
         dti_flag = "" if c["dti_within_target"] else "!"
+        capex_hi = s["capex_estimate_high"]
+        capex_col = f"${capex_hi:,.0f}" if capex_hi else "-"
+        pin = "*" if s["score_pinned"] else " "
         print(
             f"{i:>2}  {label:<40} ${row['price']:>8,} "
-            f"{colour(v)}{s['value']:>5}{OFF} {colour(v)}{v:<8}{OFF} "
+            f"{colour(v)}{s['value']:>4}{pin}{OFF} {colour(v)}{v:<8}{OFF} "
             f"${c['piti']:>7,.0f} {true_mo:>16} "
-            f"{c['front_end_dti'] * 100:>5.1f}%{dti_flag}"
+            f"{c['front_end_dti'] * 100:>5.1f}%{dti_flag} {capex_col:>9}"
         )
 
     print(f"\n{DIM}True mo. includes the maintenance reserve range; PITI and DTI do not.{OFF}")
+    print(f"{DIM}Capex is the high end of estimated near-term replacements (roof, HVAC).{OFF}")
+    print(f"{DIM}* score pinned to 50 because a hard-fail input could not be evaluated.{OFF}")
     print(f"{DIM}Run with --detail N for the full breakdown.{OFF}\n")
 
 
@@ -105,6 +110,21 @@ def detail(row: dict, profile, year: int) -> None:
         print(f"\n  {BOLD}Deductions{OFF} {DIM}(-{s['total_deducted']} total){OFF}")
         for d in s["deductions"]:
             print(f"    {GOLD}-{d['points']:<3}{OFF} {d['reason']}")
+    if s["capital_expenses"]:
+        print(
+            f"\n  {BOLD}Near-term capital expenses{OFF} "
+            f"{DIM}(-{s['capex_deducted']} pts, "
+            f"${s['capex_estimate_low']:,.0f}-${s['capex_estimate_high']:,.0f}){OFF}"
+        )
+        for e in s["capital_expenses"]:
+            tag = RED if e["urgency"] == "overdue" else GOLD
+            mag = e["magnitude"].replace("_", " ")
+            money = f"${e['estimate_low']:,.0f}-${e['estimate_high']:,.0f}"
+            print(
+                f"    {tag}-{e['points_deducted']:<3}{OFF} {e['component']}  "
+                f"{BOLD}{money}{OFF}  {tag}[{mag}]{OFF}"
+            )
+            print(f"          {DIM}{e['reason']}{OFF}")
     if s["caveats"]:
         print(f"\n  {BOLD}Caveats{OFF} {DIM}(no points deducted){OFF}")
         for cv in s["caveats"]:

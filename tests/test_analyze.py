@@ -31,7 +31,7 @@ class TestDocumentShape:
         doc = analyze(facts, profile, 2026, address="412 Maple Ridge Dr")
         for key in (
             "engine_version", "analyzed_at", "profile", "input", "tax",
-            "maintenance_reserve", "cost", "commute", "score",
+            "maintenance_reserve", "capital_expenses", "cost", "commute", "score",
             "verification_tasks", "degraded_sources",
         ):
             assert key in doc, f"missing section: {key}"
@@ -95,6 +95,32 @@ class TestGracefulDegradation:
         assert len(doc["degraded_sources"]) == 1
         assert doc["degraded_sources"][0]["station"] == "fema"
 
+    def test_capex_quotes_task_is_blocking_when_expensive(self, profile):
+        f = PropertyFacts(price=268_000, sqft=1620, beds=3, baths=3, garage_spaces=2,
+                          year_built=1978, roof_age_years=17, hvac_age_years=14,
+                          flood_zone="X", water_sewer="public", commute_min=11.2,
+                          fiber_available=True)
+        doc = analyze(f, profile, 2026)
+        quotes = [t for t in doc["verification_tasks"] if "contractor quotes" in t["task"]]
+        assert len(quotes) == 1
+        assert quotes[0]["blocking"] is True
+        assert "$14,000-$28,000" in quotes[0]["task"]
+
+    def test_overdue_component_adds_a_showing_check(self, profile):
+        f = PropertyFacts(price=262_000, sqft=2100, beds=3, baths=3, garage_spaces=2,
+                          year_built=1996, roof_age_years=24, hvac_age_years=21,
+                          flood_zone="X", water_sewer="public", commute_min=13.5,
+                          fiber_available=True)
+        doc = analyze(f, profile, 2026)
+        overdue = [t for t in doc["verification_tasks"] if "is overdue" in t["task"]]
+        assert len(overdue) == 2
+        assert all(t["blocking"] for t in overdue)
+
+    def test_healthy_house_gets_no_capex_tasks(self, facts, profile):
+        doc = analyze(facts, profile, 2026)
+        assert not any("contractor quotes" in t["task"] for t in doc["verification_tasks"])
+        assert doc["capital_expenses"]["items"] == []
+
     def test_dead_source_yields_watch_not_take(self, profile):
         """A FEMA outage must not let a flood-zone house through as a TAKE."""
         facts = PropertyFacts(price=300_000, sqft=1780, beds=3, baths=3,
@@ -109,4 +135,6 @@ class TestGracefulDegradation:
         """Price alone must not crash the engine."""
         doc = analyze(PropertyFacts(price=300_000), profile, 2026)
         assert doc["score"]["verdict"] == "WATCH"
+        assert doc["score"]["value"] == 50
+        assert doc["score"]["score_pinned"] is True
         assert doc["cost"]["piti"] > 0

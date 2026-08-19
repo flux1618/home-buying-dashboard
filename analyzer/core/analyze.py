@@ -9,12 +9,12 @@ from __future__ import annotations
 
 from typing import Any
 
-from . import cost, maintenance, scoring, tax
+from . import capex, cost, maintenance, scoring, tax
 from .profile import BuyerProfile
 from .provenance import Degradation, now_iso
 from .scoring import PropertyFacts
 
-ENGINE_VERSION = "0.1.0"
+ENGINE_VERSION = "0.2.0"
 
 
 def verification_tasks(
@@ -50,6 +50,24 @@ def verification_tasks(
     for item in result.unevaluated_hard_fails:
         add(f"Resolve before offer: {item}", blocking=True)
 
+    # A four- or five-figure bill arriving soon changes the offer, so pricing it is
+    # blocking rather than advisory.
+    if result.capital_expenses:
+        components = ", ".join(e.component.lower() for e in result.capital_expenses)
+        add(
+            f"Get contractor quotes for {components} and negotiate a credit — "
+            f"estimated ${result.capex_low:,.0f}-${result.capex_high:,.0f} total",
+            blocking=result.capex_high >= capex.QUOTE_THRESHOLD,
+            reason="planning ranges banded by home size, not a quote on this house",
+        )
+    for expense in result.capital_expenses:
+        if expense.urgency == "overdue":
+            add(
+                f"{expense.component} is overdue — confirm current condition at the "
+                f"showing before spending money on an inspection",
+                blocking=True,
+            )
+
     add("Get an actual insurance quote before the offer", blocking=False,
         reason="SC statewide average is a placeholder")
     add("Pull parcel tax history and exact tax district at Spartanburg County GIS",
@@ -73,6 +91,7 @@ def analyze(
     """Full result document. Deterministic given the same inputs."""
     degradations = degradations or []
 
+    result = scoring.score(facts, profile, current_year)
     costs = cost.compute(
         profile=profile,
         price=facts.price,
@@ -81,7 +100,6 @@ def analyze(
         hoa_monthly=facts.hoa_monthly or 0.0,
         current_year=current_year,
     )
-    result = scoring.score(facts, profile, current_year)
 
     return {
         "engine_version": ENGINE_VERSION,
@@ -104,6 +122,7 @@ def analyze(
         "maintenance_reserve": maintenance.reserve_block(
             facts.price, facts.sqft, facts.year_built, current_year
         ),
+        "capital_expenses": capex.block(result.capital_expenses),
         "cost": costs.to_dict(),
         "commute": {
             "anchor": profile.primary_anchor.label,
