@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "home-buying-analyzer"
+version = "0.1.0"
+description = "Deterministic property scoring engine for the Spartanburg home purchase"
+requires-python = ">=3.11"          # tomllib is stdlib from 3.11
+dependencies = []                    # core is stdlib-only by design, see docs/adr/0002
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+
+[tool.setuptools.packages.find]
+include = ["analyzer*"]
+
+[tool.setuptools.package-data]
+analyzer = ["fixtures/*.json"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q --strict-markers"

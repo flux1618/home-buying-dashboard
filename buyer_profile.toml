@@ -1,0 +1,78 @@
+# Buyer profile — constraints as configuration.
+#
+# Adding a persona means copying this file, not editing code. See docs/CUSTOMER_BRIEF.md
+# for where these values come from.
+#
+# NOTE: the finance block currently holds real household figures and this repo is
+# public. Tracked as an open gap in docs/THREAT_MODEL.md. The intended fix is to ship
+# illustrative defaults here and load real values from an untracked local override.
+
+name = "Spartanburg 2027 — hospital + remote engineer household"
+
+[finance]
+gross_annual_income  = 406480
+monthly_non_housing  = 9400
+down_payment         = 80000
+target_front_end_dti = 0.22
+mortgage_rate        = 0.0667   # Freddie Mac PMMS, 2026-08-13
+loan_term_months     = 360
+annual_insurance     = 3102     # SC statewide average — replace with a real quote
+target_price         = 315000
+
+[tax]
+# One of: "spartanburg_1", "typical". Falls back to "typical" when unset or unknown.
+millage_district = "typical"
+
+# Disqualifying. A house violating any of these is not a candidate at any price.
+[hard_fails]
+max_commute_min            = 20
+require_public_water_sewer = true
+exclude_flood_zones        = ["A", "AE", "AO", "AH", "V", "VE"]
+
+# Scored, not disqualifying. A house can fail these and still win on balance.
+[preferences]
+min_beds          = 3
+min_baths         = 3
+min_sqft          = 1400
+min_garage_spaces = 2
+require_fiber     = true
+max_hoa_monthly   = 100
+
+[preferences.penalties]
+hoa_over_max  = 25
+beds_under    = 20
+sqft_under    = 20
+no_fiber      = 15
+garage_under  = 10
+baths_under   = 8
+
+# Flagged for attention. No points deducted.
+[caveats]
+preferred_year_built_min = 2000
+roof_age_caveat_years    = 15
+hvac_age_caveat_years    = 12
+max_price_over_target_pct = 0.10
+max_price_per_sqft        = 200
+
+[verdict]
+take_min  = 75   # >= this: strong fit, take to inspection
+watch_min = 50   # >= this: watch, negotiate or wait. Below: pass.
+
+# Commute anchors. First entry is primary. Rush hour is the 7a hospital shift change,
+# not generic office peak.
+[[anchor]]
+label          = "Spartanburg Medical Center"
+address        = "101 E Wood St, Spartanburg, SC 29303"
+lat            = 34.9679
+lon            = -81.9403
+arrival_window = "weekday 06:30-07:00"
+source_url     = "https://www.spartanburgregional.com/maps"
+
+# Second campus — uncomment to score against both anchors.
+# [[anchor]]
+# label          = "Spartanburg Medical Center — Mary Black Campus"
+# address        = "1700 Skylyn Dr, Spartanburg, SC 29307"
+# lat            = 34.9430
+# lon            = -81.8880
+# arrival_window = "weekday 06:30-07:00"
+# source_url     = "https://www.spartanburgregional.com/maps"
