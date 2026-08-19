@@ -13,6 +13,7 @@ async function boot(){
   renderLegend();
   renderScorecard();
   renderTiming();
+  renderHazards();
   bindGlobals();
   bindRentBuy();
   bindProperty();
@@ -230,13 +231,10 @@ function updateAll(){
   document.getElementById('l-w-fiber').textContent = readNum('i-w-fiber')+'%';
 
   const loan = Math.max(0, price - down);
-  const n=360, r=rate/12;
-  const pi = r>0 ? loan*(r*Math.pow(1+r,n))/(Math.pow(1+r,n)-1) : loan/n;
-  // Tax: SC owner-occupied 4% ratio × ~280 mills (est.), school-operating exempt (Act 388)
-  const mills = DATA.global.tax.typical_owner_millage_mills;
-  const taxMo = price * DATA.global.tax.primary_assessment_ratio * (mills/1000) / 12;
-  const insMo = DATA.global.insurance.sc_avg_annual / 12;
-  const piti = pi + taxMo + insMo + hoa;
+  // PITI lives in pitiParts so this KPI block and the max-price solver below read the same
+  // function instead of two copies of the same formula.
+  const parts = pitiParts(price, down, rate, hoa);
+  const pi = parts.pi, taxMo = parts.tax, insMo = parts.ins, piti = parts.piti;
   const fdti = piti / (inc/12);
   const closing = price * 0.03;
   document.getElementById('k-loan').textContent = fmt$(loan);
@@ -251,6 +249,7 @@ function updateAll(){
   if(fdti*100 <= dti){ fEl.textContent = `Under ${dti}% target ✓`; fEl.className='d up'; }
   else{ fEl.textContent = `Over ${dti}% target — cut price or grow down`; fEl.className='d down'; }
   document.getElementById('k-ctc').textContent = fmt$(down + closing);
+  renderMaxPrice(inc, down, rate, hoa, dti);
 
   // Verdict
   const rentEq = 2200; // Spartanburg 3-bed rent baseline
@@ -260,6 +259,78 @@ function updateAll(){
   verdict.innerHTML = `<b>Verdict:</b> <span class="chip ${decision}">${decision==='take'?'TAKE':'WATCH'}</span> at ${fmt$(price)} · rate ${(rate*100).toFixed(2)}%. PITI ${fmt$(piti)} vs. ~${fmt$(rentEq)} rent (${delta>=0?'+':''}${fmt$(delta)}/mo). Cash to close ${fmt$(down+closing)}. Sensitivity: a +1% rate move adds ~${fmt$(loan*0.01/12*7)}/mo on this loan.`;
 
   updateBE(); updateProperty(); updateRunway(); renderScorecard();
+}
+
+/* ---------------- MAX PRICE (the affordability question read backwards) ----------------
+   The forward question is "what does this house cost me". The question you actually ask
+   while browsing listings is "what is the highest number I can put in the price filter".
+   Same arithmetic, solved for price instead of payment.
+
+   Solved by bisection over pitiParts rather than algebraically. PITI on this page is
+   linear in price, so a closed form would work today -- but the engine's version is not
+   (deed fee steps per $500, assessment ratio and millage branches), and a formula derived
+   independently here would drift from the engine the first time either side changes.
+   Bisecting the same function the KPIs use cannot disagree with them, because it is them. */
+function pitiParts(price, down, rate, hoa){
+  const loan = Math.max(0, price - down);
+  const n=360, r=rate/12;
+  const pi = r>0 ? loan*(r*Math.pow(1+r,n))/(Math.pow(1+r,n)-1) : loan/n;
+  // Tax: SC owner-occupied 4% ratio × ~280 mills (est.), school-operating exempt (Act 388)
+  const mills = DATA.global.tax.typical_owner_millage_mills;
+  const tax = price * DATA.global.tax.primary_assessment_ratio * (mills/1000) / 12;
+  const ins = DATA.global.insurance.sc_avg_annual / 12;
+  return { pi, tax, ins, piti: pi + tax + ins + hoa };
+}
+function solveMaxPrice(inc, down, rate, hoa, dtiPct){
+  const ceiling = (dtiPct/100) * (inc/12);
+  // The floor is the payment at a price equal to the down payment, not at a price of zero.
+  // The down payment is fixed, so any price below it is a house you are overpaying cash
+  // for -- the engine's solver uses the same floor, and starting at zero here produced a
+  // "max price" of $13k against $80k down, which is not an answer.
+  const floorPrice = Math.max(down, 1);
+  const floor = pitiParts(floorPrice, down, rate, hoa).piti;
+  // Property tax scales with price and vanishes at the floor; insurance and HOA do not. So
+  // if the floor already breaks the ceiling, no price works and the honest answer is to say
+  // so. Returning 0 would imply "buy something cheaper", which is not the fix.
+  if(floor > ceiling) return { feasible:false, floor:floor, floorPrice:floorPrice };
+  let lo = floorPrice, hi = down + 5000000;
+  if(pitiParts(hi, down, rate, hoa).piti <= ceiling) return { feasible:true, price:hi, capped:true };
+  // Bounded loop, not while(hi-lo>1). 60 halvings of a $5M bracket lands far inside a
+  // dollar, and a bounded loop cannot hang the page on a pathological input.
+  for(let i=0;i<60 && hi-lo>1;i++){
+    const mid = (lo+hi)/2;
+    if(pitiParts(mid, down, rate, hoa).piti <= ceiling) lo = mid; else hi = mid;
+  }
+  // Return the low edge. Rounding up hands back a price that breaches the ceiling, which
+  // is the one direction of error that actually costs something.
+  return { feasible:true, price:lo };
+}
+function renderMaxPrice(inc, down, rate, hoa, dtiPct){
+  const el = document.getElementById('k-maxp');
+  const dEl = document.getElementById('k-maxp-d');
+  const note = document.getElementById('maxp-note');
+  const s = solveMaxPrice(inc, down, rate, hoa, dtiPct);
+  if(!s.feasible){
+    el.textContent = 'none';
+    dEl.textContent = `Fixed costs alone are ${fmt$(s.floor)}/mo`;
+    note.innerHTML = `<b>No price clears ${dtiPct}%.</b> Even at ${fmt$(s.floorPrice)} with no loan at all, taxes, insurance and HOA come to ${fmt$(s.floor)}/mo, above the cap. Fixed costs are the binding constraint, so a cheaper house does not solve it.`;
+    return;
+  }
+  const p = s.price;
+  const piti = pitiParts(p, down, rate, hoa).piti;
+  el.textContent = fmt$(p);
+  dEl.textContent = `PITI ${fmt$(piti)}/mo at the ${dtiPct}% cap`;
+  const downPct = p>0 ? (down/p)*100 : 0;
+  let pmi = '';
+  if(downPct < 20){
+    // Raising the price is what drives this share down, so the warning is a property of
+    // the answer rather than of the inputs. Mortgage insurance is modeled nowhere in this
+    // project, which is exactly why the number above is an upper bound.
+    pmi = ` A fixed ${fmt$(down)} down on ${fmt$(p)} is ${downPct.toFixed(1)}%, under 20% — mortgage insurance would apply at roughly 0.3–1.5% of the loan per year and is <b>not</b> included. Treat this as an upper bound.`;
+  }
+  const target = readNum('i-price');
+  const headroom = p - target;
+  note.innerHTML = `<b>Lender basis: ${fmt$(p)}</b> at a ${dtiPct}% front-end DTI cap. That is PITI only, which is what a pre-approval letter shows. It excludes the maintenance reserve — the CLI and API return a second, lower <i>household</i> number that funds it.${pmi} Against your ${fmt$(target)} working price that is ${fmt$(Math.abs(headroom))} of ${headroom>=0?'headroom':'overshoot'}, which is the point: DTI is not the binding constraint at this income. Cash to close and the appraisal are.`;
 }
 
 /* ---------------- RENT VS BUY ---------------- */
@@ -426,6 +497,147 @@ function renderTiming(){
         <a href="${src}" target="_blank" style="color:var(--text-faint)">source</a>
       </div>
     </div>`).join('');
+}
+
+/* ---------------- HAZARD RISK ----------------
+   Reads data.hazards, written by tools/build_hazard_snapshot.py from the FEMA National
+   Risk Index. Deliberately isolated from the scoring path: nothing in here touches
+   updateProperty or the rules block, and tests/test_hazard_snapshot.py asserts that.
+   Hazard risk is a caveat (ADR 0009), and the page has to agree with the engine about
+   that or we are back to two implementations of one rule. */
+
+/* Worst first. Sorting by FEMA's label would put "Relatively Moderate" hail above
+   "Relatively Low" wildfire at 68.9 — the exact inversion the callout warns about. */
+function hzRank(h){ return h.modeled ? h.percentile : -1; }
+
+function hzColor(p){
+  if(p==null) return 'var(--text-faint)';
+  if(p>=90) return 'var(--red)';
+  if(p>=75) return 'var(--gold)';
+  return 'var(--primary)';
+}
+
+function renderHazards(){
+  const H = DATA.hazards;
+  if(!H){ document.getElementById('hazard').style.display='none'; return; }
+
+  const sel = document.getElementById('hz-zip');
+  const codes = Object.keys(H.zips).sort();
+  sel.innerHTML = codes.map(z=>
+    `<option value="${z}"${z==='29301'?' selected':''}>${z} · ${H.zips[z].name}</option>`
+  ).join('');
+  sel.addEventListener('change', updateHazards);
+
+  const drgt = H.county.hazards.DRGT;
+  if(drgt){
+    document.getElementById('hz-drgt-n').textContent = `${drgt.modeled_tracts} of ${drgt.total_tracts}`;
+    if(drgt.min!=null) document.getElementById('hz-drgt-r').textContent = `${drgt.min.toFixed(1)} to ${drgt.max.toFixed(1)}`;
+  }
+
+  document.getElementById('hz-src').innerHTML =
+    `Source — <a href="${H.source_url}" target="_blank">FEMA National Risk Index</a>, `+
+    `data version ${H.nri_version}, ${H.county.tract_count} census tracts in `+
+    `${H.county_name}. Retrieved ${H.retrieved} at build time and committed: this page `+
+    `looks nothing up at runtime. Percentiles are national, 0–100, higher is worse — `+
+    `except community resilience, where higher is better.`;
+
+  updateHazards();
+}
+
+function updateHazards(){
+  const H = DATA.hazards;
+  const zip = document.getElementById('hz-zip').value;
+  const Z = H.zips[zip];
+
+  const rows = H.hazard_codes
+    .map(c=>({code:c, tract:Z.hazards[c]||{label:H.hazard_labels[c],modeled:false}, county:H.county.hazards[c]||{}}))
+    .sort((a,b)=>hzRank(b.tract)-hzRank(a.tract));
+
+  document.getElementById('hz-bars').innerHTML = rows.map(({tract,county})=>{
+    const label = tract.label.charAt(0).toUpperCase()+tract.label.slice(1);
+
+    if(!tract.modeled){
+      // Unknown, not low. If the county models it elsewhere, say so — that is the
+      // difference between "no exposure here" and "nobody measured this tract".
+      const elsewhere = county.modeled_tracts>0
+        ? `Not modeled for this tract. Modeled in ${county.modeled_tracts} of `+
+          `${county.total_tracts} county tracts, where it runs ${county.min}–${county.max}. `+
+          `<b style="color:var(--gold)">Unknown, not low.</b>`
+        : `Not modeled anywhere in the county.`;
+      return `<div style="border-bottom:1px solid var(--divider);padding:9px 0">
+        <div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px">
+          <b>${label}</b><span style="color:var(--text-faint);font-size:var(--text-xs)">no rating</span>
+        </div>
+        <div style="font-size:var(--text-xs);color:var(--text-muted);margin-top:3px">${elsewhere}</div>
+      </div>`;
+    }
+
+    const p = tract.percentile;
+    // County span drawn as a track behind the tract marker, so "63 out of a county that
+    // runs 19 to 76" is one glance instead of two numbers to hold in your head.
+    const lo = county.min ?? 0, hi = county.max ?? 100;
+    return `<div style="border-bottom:1px solid var(--divider);padding:9px 0">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px">
+        <b>${label}</b>
+        <span style="font-size:var(--text-xs);color:var(--text-muted)">
+          <b class="numeric" style="color:${hzColor(p)};font-size:var(--text-sm)">${p.toFixed(1)}</b>
+          <span style="color:var(--text-faint)"> · FEMA calls this “${tract.rating}”</span>
+        </span>
+      </div>
+      <div style="position:relative;height:7px;margin-top:6px;background:var(--surface-2);border-radius:4px;overflow:hidden">
+        <div style="position:absolute;left:${lo}%;width:${Math.max(hi-lo,0.5)}%;top:0;bottom:0;background:var(--border)"></div>
+        <div style="position:absolute;left:${Math.min(p,99.2)}%;top:-2px;bottom:-2px;width:2.5px;background:${hzColor(p)};border-radius:2px"></div>
+      </div>
+      <div style="font-size:var(--text-xs);color:var(--text-faint);margin-top:3px">County spread ${lo}–${hi}, median ${county.median}</div>
+    </div>`;
+  }).join('');
+
+  const put=(id,obj,better)=>{
+    const el=document.getElementById(id), d=document.getElementById(id+'-d');
+    if(!obj){ el.textContent='–'; el.style.color='var(--text-faint)'; d.textContent='FEMA gives this tract no rating — unknown, not low'; return; }
+    el.textContent = obj.percentile.toFixed(1);
+    el.style.color = better==='high' ? 'var(--text)' : hzColor(obj.percentile);
+    d.innerHTML = `“${obj.rating}”`;
+  };
+  put('hz-comp', Z.nri_composite_risk);
+  put('hz-sovi', Z.social_vulnerability);
+  put('hz-resl', Z.community_resilience, 'high');
+  document.getElementById('hz-tract').textContent = Z.tract_fips || '–';
+
+  const cty = H.county;
+  const notes = [];
+
+  if(Z.nri_composite_risk) notes.push(
+    `Composite averages all 18 hazards FEMA models, including the 11 that do not apply `+
+    `here, so it runs low by construction. County median is ${cty.nri_composite_risk.median}. `+
+    `Read the individual bars, not this number.`);
+
+  // The composite hides a hazard only when there is something worth hiding. An early
+  // version fired on any wide gap and flagged Spartanburg hail against a low composite,
+  // which is a true statement about arithmetic and useless as a warning.
+  const worst = rows.filter(r=>r.tract.modeled).sort((a,b)=>b.tract.percentile-a.tract.percentile)[0];
+  if(worst && Z.nri_composite_risk && worst.tract.percentile>=75 &&
+     worst.tract.percentile - Z.nri_composite_risk.percentile >= 25){
+    notes.push(`<b style="color:var(--gold)">The composite understates this tract.</b> `+
+      `${worst.tract.label.charAt(0).toUpperCase()+worst.tract.label.slice(1)} sits at `+
+      `${worst.tract.percentile.toFixed(1)} while the composite reads `+
+      `${Z.nri_composite_risk.percentile.toFixed(1)}.`);
+  }
+
+  if(cty.community_resilience && cty.community_resilience.varies_by_tract===false) notes.push(
+    `<b>Community resilience is a county figure, not a tract one.</b> All `+
+    `${cty.tract_count} tracts in ${cty.county_name||H.county_name} return the same `+
+    `${cty.community_resilience.median} — verified against three other counties, which `+
+    `each return one value too. It tells you nothing about this neighbourhood. Social `+
+    `vulnerability does vary, across ${cty.social_vulnerability.min}–${cty.social_vulnerability.max}.`);
+
+  notes.push(`This is the single tract containing the ZIP centroid, not an average over `+
+    `the ZIP. 29301 is a working example of why that matters: the centroid tract reads `+
+    `wildfire 68.9, and the tract holding 606 Andre Ct — same ZIP — reads 28.4.`);
+
+  document.getElementById('hz-notes').innerHTML = notes.map(n=>
+    `<div style="font-size:var(--text-xs);color:var(--text-muted);padding:7px 0;border-top:1px solid var(--divider);line-height:1.6">${n}</div>`
+  ).join('');
 }
 
 /* ---------------- PROPERTY SCORER ---------------- */

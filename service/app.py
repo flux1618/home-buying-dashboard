@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import io
 import time
+from datetime import datetime
 from typing import Annotated, Any, Literal
 
 from fastapi import Body, FastAPI, HTTPException, Query, Request, UploadFile
@@ -37,6 +38,7 @@ from pydantic import BaseModel, Field, field_validator
 from analyzer import batch
 from analyzer.core.profile import BuyerProfile, load_profile
 from analyzer.core.analyze import ENGINE_VERSION
+from analyzer.core.cost import solve_max_price
 from analyzer.pipeline import PipelineAborted, run
 
 # The profile is read once at startup rather than per request. It is a config file, not
@@ -83,6 +85,25 @@ class PropertyRequest(BaseModel):
         if not cleaned:
             raise ValueError("address cannot be blank")
         return cleaned
+
+
+class MaxPriceRequest(BaseModel):
+    """Nothing about a specific house is required, because this is the pre-shopping question.
+
+    Every field is optional. `sqft` and `year_built` only sharpen the maintenance reserve,
+    and leaving them out is honest rather than broken -- the response says which band it
+    fell back to.
+    """
+
+    model_config = {"extra": "forbid"}
+
+    # Percent, not a fraction. `dti=22` is unambiguous over HTTP in a way that 0.22 is
+    # not: a caller who means 22 and sends 22 should not silently get a 2200% ceiling.
+    dti_pct: float | None = Field(default=None, gt=0, le=100)
+    sqft: float | None = Field(default=None, gt=0, le=50_000)
+    year_built: int | None = Field(default=None, ge=1700, le=2100)
+    hoa_monthly: float = Field(default=0.0, ge=0, le=10_000)
+    owner_occupied: bool = True
 
 
 class AnalysisResponse(BaseModel):
@@ -230,6 +251,42 @@ def create_app() -> FastAPI:
             elapsed_seconds=round(time.monotonic() - started, 2),
             engine_version=ENGINE_VERSION,
         )
+
+    @app.post("/max-price", tags=["analysis"])
+    def max_price(payload: Annotated[MaxPriceRequest, Body()]) -> dict[str, Any]:
+        """Invert the affordability question: how much house does a DTI ceiling buy.
+
+        No address, no network, no stations. This is pure arithmetic over the profile, so
+        it answers instantly and works with every source offline -- which is exactly when
+        somebody browsing listings wants it.
+        """
+        solution = solve_max_price(
+            profile(),
+            dti_ceiling=None if payload.dti_pct is None else payload.dti_pct / 100.0,
+            sqft=payload.sqft,
+            year_built=payload.year_built,
+            hoa_monthly=payload.hoa_monthly,
+            current_year=datetime.now().year,
+            owner_occupied=payload.owner_occupied,
+        )
+        return {
+            "max_price": solution.to_dict(),
+            "engine_version": ENGINE_VERSION,
+            "assumptions": {
+                "down_payment": profile().down_payment,
+                "mortgage_rate": profile().mortgage_rate,
+                "loan_term_months": profile().loan_term_months,
+                "annual_insurance": profile().annual_insurance,
+                "gross_annual_income": profile().gross_annual_income,
+            },
+            # Spelled out because the down payment is fixed while the price moves, which
+            # means a higher solved price is a lower down-payment percentage.
+            "note": (
+                "The down payment is held fixed from the profile, so a higher solved "
+                "price means a smaller percentage down. Check the notes for a mortgage "
+                "insurance warning."
+            ),
+        }
 
     @app.post("/shortlist", tags=["analysis"])
     def analyze_shortlist(

@@ -179,6 +179,18 @@ jobs:
       - name: The page reads the compiled rules rather than restating them
         run: pytest tests/test_snapshot_rules.py -v
 
+      - name: hazard block in data.json is structurally sound
+        # Deliberately a structural check and not a re-fetch. It verifies the hazard codes
+        # still match buyer_profile.toml and that every configured hazard has a county
+        # entry -- the same drift class as the rules check above.
+        #
+        # It does NOT call FEMA. A CI job that fails when a federal dataset is republished
+        # trains people to ignore CI, and republication is not a defect in this repo.
+        run: python tools/build_hazard_snapshot.py --check
+
+      - name: hazard data is reported and never scored
+        run: pytest tests/test_hazard_snapshot.py -v
+
   container:
     name: container builds for amd64 and arm64
     runs-on: ubuntu-latest

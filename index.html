@@ -157,6 +157,7 @@ textarea{width:100%;min-height:120px;background:var(--surface-2);border:1px soli
       <a href="#afford">Affordability</a>
       <a href="#break-even">Rent vs buy</a>
       <a href="#scorecard">Submarket scores</a>
+      <a href="#hazard">Hazard risk</a>
       <a href="#timing">Timing signals</a>
       <a href="#property">Property scorer</a>
       <a href="#runway">Cash-flow runway</a>
@@ -228,7 +229,9 @@ textarea{width:100%;min-height:120px;background:var(--surface-2);border:1px soli
         <div class="kpi"><div class="k"><b style="color:var(--primary)">PITI + HOA</b></div><div class="v numeric" id="k-piti">$2,030</div><div class="d">Total housing payment</div></div>
         <div class="kpi"><div class="k">Front-end DTI</div><div class="v numeric" id="k-fdti">6.0%</div><div class="d" id="k-fdti-d">Target ≤22%</div></div>
         <div class="kpi"><div class="k">Cash to close</div><div class="v numeric" id="k-ctc">$89,300</div><div class="d">Down + est. 3% closing</div></div>
+        <div class="kpi" style="border-color:var(--primary)"><div class="k"><b style="color:var(--primary)">Max price at DTI cap</b></div><div class="v numeric" id="k-maxp">—</div><div class="d" id="k-maxp-d">Solved from the DTI slider</div></div>
       </div>
+      <div class="callout" id="maxp-note" style="margin-top:12px"></div>
       <div class="formula" style="margin-top:12px">P&I = L × r(1+r)^n / ((1+r)^n − 1) &nbsp;·&nbsp; Tax/mo = price × 0.04 × mills/1000 / 12 (Act 388: owner-occupied is exempt from school operating millage) &nbsp;·&nbsp; Ins/mo = SC avg $3,102 / 12 (get an actual quote before contract)</div>
       <div class="callout" id="afford-verdict"></div>
     </section>
@@ -274,6 +277,36 @@ textarea{width:100%;min-height:120px;background:var(--surface-2);border:1px soli
         </table>
       </div>
       <div class="small-src">ZIP-level median sale price, $/sqft, DoM and inventory: <a href="https://www.redfin.com/news/data-center/" target="_blank">Redfin Data Center</a> (3-mo rolling ends 2026-05-31). Drive minutes: OSRM to downtown Spartanburg. Score = weighted normalized composite; edit weight in the sidebar.</div>
+    </section>
+
+    <!-- HAZARD RISK -->
+    <section id="hazard">
+      <h2>Hazard risk · FEMA National Risk Index</h2>
+      <div class="sub">Seven hazards for this region, at census-tract resolution. <b>None of this scores a house.</b> It is reported the same way a pre-2000 build year is — a reason to price insurance and ask questions, not a deduction.</div>
+
+      <div class="grid grid-2">
+        <div>
+          <div class="slider-wrap"><label>ZIP <span style="color:var(--text-faint)">— shows the one tract at the ZIP centroid</span></label><select id="hz-zip" style="width:100%;padding:7px 9px;background:var(--surface-2);color:var(--text);border:1px solid var(--border);border-radius:7px;font-family:inherit;font-size:var(--text-sm)"></select></div>
+          <div id="hz-bars" style="margin-top:14px"></div>
+        </div>
+        <div>
+          <div class="grid grid-2" style="gap:10px">
+            <div class="kpi"><div class="k">All-hazard composite</div><div class="v numeric" id="hz-comp">–</div><div class="d" id="hz-comp-d"></div></div>
+            <div class="kpi"><div class="k">Social vulnerability</div><div class="v numeric" id="hz-sovi">–</div><div class="d" id="hz-sovi-d"></div></div>
+            <div class="kpi"><div class="k">Community resilience</div><div class="v numeric" id="hz-resl">–</div><div class="d" id="hz-resl-d"></div></div>
+            <div class="kpi"><div class="k">Census tract</div><div class="v numeric" style="font-size:var(--text-base)" id="hz-tract">–</div><div class="d">FEMA's smallest unit</div></div>
+          </div>
+          <div id="hz-notes" style="margin-top:12px"></div>
+        </div>
+      </div>
+
+      <div class="callout" style="margin-top:14px;border-left-color:var(--red)">
+        <b>Two ways this dataset misleads you, both measured rather than assumed.</b>
+        <div style="margin-top:6px"><b>A rating label is not a scale.</b> FEMA's five labels are binned separately per hazard. In ZIP 29301 the centroid tract reads hail <b>71.0</b> rated "Relatively Moderate" and wildfire <b>68.9</b> rated "Relatively Low" — two percentiles two points apart, two different labels. Nationally the gap is worse: the tract containing Paradise, California reads wildfire <b>95.2</b> and is also labeled "Relatively Moderate." Everything here is ranked on the number.</div>
+        <div style="margin-top:6px"><b>A blank is not a zero.</b> Drought is modeled in only <b id="hz-drgt-n">20 of 87</b> Spartanburg tracts — and in the 20 where it is modeled it runs <b id="hz-drgt-r">71.0 to 94.7</b>, the highest-percentile hazard in the county. Look up a single address in the other 67 and drought reports as unknown, which reads like good news and is not. That is why the county spread is shown next to every tract figure.</div>
+      </div>
+
+      <div class="small-src" id="hz-src"></div>
     </section>
 
     <!-- TIMING -->

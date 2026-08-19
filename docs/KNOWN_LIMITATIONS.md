@@ -253,6 +253,61 @@ Python. If a future rule cannot be written as a comparison against a number, the
 be able to apply it, and the correct response is to point the user at the local engine rather
 than to grow the compiler into a second implementation.
 
+## The max-price figure is an upper bound, because mortgage insurance is unmodeled
+
+`solve_max_price` holds the down payment fixed from the profile while it searches for a
+price. That means every dollar it adds to the answer lowers the down-payment percentage: at
+$80,000 down, the 22% answer lands at 7.6% down.
+
+Mortgage insurance is modeled nowhere in this project. Under 20% down it typically runs
+0.3-1.5% of the loan per year, which would pull the real ceiling down materially. The
+solution carries the warning, the page repeats it, and the number should be read as an
+upper bound rather than a target. See [ADR 0010](adr/0010-inverse-affordability-is-two-answers.md).
+
+The household figure is closer to reality than the lender figure, but it is still a PITI +
+reserve number, not a full budget. Neither figure models utilities, a second car, or the
+income variability of a shift-differential household.
+
+## The page's max-price solver is a second implementation, not a compiled rule
+
+Per [ADR 0008](adr/0008-browser-rules-are-compiled-not-rewritten.md) duplicated logic gets
+compiled into the snapshot. A bisection is behaviour rather than a rule table, so there was
+nothing to compile, and `app.js` has its own `solveMaxPrice`.
+
+It is held to the Python engine by `tests/test_max_price.py::TestTheTwoDoorsAgree`, which
+runs both and asserts they land within $2 across three DTI ceilings. That test caught a real
+divergence on its first run -- the JavaScript bracketed from a price of zero and returned a
+max price of $13,379 against an $80,000 down payment. The residual risk is a divergence in a
+case the parity test does not parameterise.
+
+Those four tests require `node`. They skip rather than fail when it is absent, so a clean
+run in an environment without `node` is a weaker signal than it looks.
+
+## Hazard data on the page is a county distribution plus a centroid tract, not your tract
+
+The engine geocodes an address and reports the National Risk Index for that census tract. The
+page has ZIP polygons and no address, so it reports two things that are both true and neither
+of which is "the risk at your house":
+
+- **County-wide** min, median and max across all 87 Spartanburg tracts.
+- The tract containing each **ZIP centroid** -- a sample from inside the ZIP, not an average
+  over it.
+
+The spread is not academic. ZIP 29301's centroid tract reads wildfire 68.9; 606 Andre Ct, in
+the same ZIP, reads 28.4. A 40-point gap inside one ZIP. Use the page to decide whether a
+hazard is worth asking about, and the engine on a specific address to decide anything else.
+
+**Community resilience is a county-resolution figure.** Verified across four counties: every
+tract in Spartanburg, Greenville, Butte CA and Cumberland NC returns a single resilience
+value for its whole county, while social vulnerability takes 74 distinct values across
+Spartanburg's 87 tracts alone. The builder computes this from the data rather than asserting
+it, so the label corrects itself if FEMA changes resolution.
+
+**Drought is modeled in only 20 of 87 Spartanburg tracts**, and where it is modeled it runs
+71.0 to 94.7 -- the highest-percentile hazard in the county. At 606 Andre Ct it reports "not
+modeled", which reads as an absence and is not one. Unmodeled hazards are rendered as
+unknown and sorted below every measured hazard, never as zero.
+
 ---
 
 ## Not financial advice

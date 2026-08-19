@@ -9,6 +9,11 @@ import argparse
 import json
 import sys
 
+from datetime import datetime
+
+# Imported as `solve_max_price` rather than the module, because `render` already binds a
+# local named `cost` from the document and shadowing the module there would be a trap.
+from .core.cost import solve_max_price
 from .core.profile import load_profile
 from .pipeline import PipelineAborted, run
 
@@ -71,6 +76,7 @@ def render(doc: dict) -> None:
     print(f"    Cash to close   ${cost['cash_to_close']:>10,.0f}")
 
     render_hazards(doc.get("hazard_profile"))
+    render_max_price(doc.get("max_price"))
 
     blocking = [t for t in doc["verification_tasks"] if t.get("blocking")]
     advisory = [t for t in doc["verification_tasks"] if not t.get("blocking")]
@@ -84,6 +90,36 @@ def render(doc: dict) -> None:
         for task in advisory:
             print(f"    {DIM}·{OFF} {task['task']}")
     print()
+
+
+def render_max_price(solution: dict | None) -> None:
+    """The inverse question: not "can I afford this house" but "what can I offer".
+
+    Printed under Monthly because it is the same arithmetic read backwards, and it uses
+    the sqft and build year the pipeline just looked up rather than asking again.
+
+    Both numbers are shown, always. The lender figure is larger and is the one people
+    quote; the household figure is the one that survives a year of ownership. Printing
+    only the first would be technically accurate and practically misleading.
+    """
+    if not solution:
+        return
+
+    ceiling = solution["dti_ceiling"]
+    print(f"\n  {BOLD}Max price at {ceiling * 100:.0f}% front-end DTI{OFF}")
+
+    if not solution["feasible"]:
+        print(f"    {RED}No price clears this ceiling.{OFF}")
+        for note in solution["notes"]:
+            print(f"      {DIM}{note}{OFF}")
+        return
+
+    lender = solution["lender_max_price"]
+    household = solution["household_max_price"]
+    print(f"    Lender basis     ${lender:>10,.0f}   {DIM}PITI only, what an approval shows{OFF}")
+    print(f"    Household basis  ${household:>10,.0f}   {DIM}PITI + maintenance reserve{OFF}")
+    for note in solution["notes"]:
+        print(f"    {DIM}· {note}{OFF}")
 
 
 def render_hazards(profile: dict | None) -> None:
@@ -174,6 +210,18 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--hvac-age", type=int, default=None)
     parser.add_argument("--garage", type=int, default=None, help="garage bay count")
     parser.add_argument("--profile", default=None)
+    parser.add_argument(
+        "--max-price",
+        nargs="?",
+        type=float,
+        const=-1.0,
+        default=None,
+        metavar="DTI_PCT",
+        help=(
+            "also solve for the highest price that holds front-end DTI at or under a "
+            "ceiling, given as a percent. Bare --max-price uses the profile target."
+        ),
+    )
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args(argv)
 
@@ -192,6 +240,20 @@ def main(argv: list[str] | None = None) -> int:
     except PipelineAborted as exc:
         print(f"{RED}Could not analyse this address:{OFF} {exc}", file=sys.stderr)
         return 1
+
+    if args.max_price is not None:
+        # Reuses the sqft and year built the pipeline already looked up, so the reserve
+        # inside the solved price is the same reserve reported above it.
+        ceiling = None if args.max_price < 0 else args.max_price / 100.0
+        facts = result.document["input"]
+        result.document["max_price"] = solve_max_price(
+            profile,
+            dti_ceiling=ceiling,
+            sqft=facts.get("sqft"),
+            year_built=facts.get("year_built"),
+            hoa_monthly=args.hoa,
+            current_year=datetime.now().year,
+        ).to_dict()
 
     if args.json:
         print(json.dumps(result.document, indent=2))
