@@ -70,6 +70,8 @@ def render(doc: dict) -> None:
     print(f"    True monthly    ${cost['true_monthly_low']:>10,.0f} - ${cost['true_monthly_high']:,.0f}")
     print(f"    Cash to close   ${cost['cash_to_close']:>10,.0f}")
 
+    render_hazards(doc.get("hazard_profile"))
+
     blocking = [t for t in doc["verification_tasks"] if t.get("blocking")]
     advisory = [t for t in doc["verification_tasks"] if not t.get("blocking")]
     print(f"\n  {BOLD}Before an offer{OFF} {DIM}({len(blocking)} blocking){OFF}")
@@ -82,6 +84,85 @@ def render(doc: dict) -> None:
         for task in advisory:
             print(f"    {DIM}·{OFF} {task['task']}")
     print()
+
+
+def render_hazards(profile: dict | None) -> None:
+    """FEMA National Risk Index for the census tract, printed after the money.
+
+    Deliberately below Monthly and above the task list, because that is what this data
+    is: it does not change the score, it changes what you go ask an insurance agent.
+
+    Percentiles are shown and FEMA's rating labels are not, with one exception. The
+    labels are binned separately for each hazard, so a "Relatively Moderate" wildfire
+    rating and a "Relatively Moderate" heat rating are nowhere near the same national
+    position — printing them side by side in a column would invite exactly the wrong
+    comparison. The number is the comparable thing.
+    """
+    if not profile:
+        return
+
+    hazards = profile.get("hazards") or {}
+    modeled = {c: h for c, h in hazards.items() if h.get("modeled")}
+    unmodeled = [h["label"] for h in hazards.values() if not h.get("modeled")]
+    if not modeled and not unmodeled and not profile.get("nri_composite_risk"):
+        return
+
+    tract = profile.get("tract_fips") or "unknown tract"
+    print(f"\n  {BOLD}Hazard risk{OFF} {DIM}(FEMA NRI · tract {tract} · no score effect){OFF}")
+
+    for label, key in (
+        ("Social vulnerability", "social_vulnerability"),
+        ("Community resilience", "community_resilience"),
+    ):
+        entry = profile.get(key)
+        if entry and entry.get("percentile") is not None:
+            print(
+                f"    {label:<22} {entry['percentile']:>5.1f}"
+                f"  {DIM}{entry.get('rating', '')}{OFF}"
+            )
+
+    # Sorted worst-first: the reason to read this section is to find the one hazard that
+    # is out of line, and an alphabetical list buries it.
+    ranked = sorted(modeled.values(), key=lambda h: h["percentile"], reverse=True)
+    for hazard in ranked:
+        pct = hazard["percentile"]
+        colour = RED if pct >= 90 else GOLD if pct >= 75 else ""
+        # OFF only when a colour was actually opened. Emitting a reset unconditionally
+        # leaves a visible escape sequence in any terminal or log that is not
+        # interpreting ANSI, which is most places this output gets pasted.
+        suffix = OFF if colour else ""
+        print(f"    {hazard['label']:<22} {colour}{pct:>5.1f}{suffix}")
+
+    if unmodeled:
+        print(
+            f"    {DIM}not modeled here: {', '.join(sorted(unmodeled))} "
+            f"— unknown, not low{OFF}"
+        )
+
+    # FEMA's composite risk index is deliberately not printed as a headline number. It
+    # averages all 18 hazards, and most hazards do not apply to any given place, so a
+    # tract can be extreme in the one hazard that will actually happen to it and still
+    # rate low overall. The tract containing Paradise, California scores 32nd percentile
+    # composite and 95th for wildfire. The composite is only worth surfacing when it
+    # disagrees with the worst hazard, and then only to say so out loud.
+    #
+    # Both conditions are required, and the second one was added because the first alone
+    # was wrong. A gap test by itself fires on Spartanburg, where the composite reads 18.6
+    # and the worst hazard is hail at 51.7 — a 33-point gap and nothing anyone needs to
+    # act on. Warning that a composite "understates" a middling hazard is noise, and noise
+    # in a caveat channel teaches people to skip the caveats. The note only earns its
+    # place when the hidden hazard is genuinely elevated.
+    composite = profile.get("nri_composite_risk") or {}
+    composite_pct = composite.get("percentile")
+    if composite_pct is not None and ranked:
+        worst = ranked[0]
+        if worst["percentile"] >= 75.0 and worst["percentile"] - composite_pct >= 25.0:
+            print(
+                f"    {DIM}FEMA's all-hazard composite reads {composite_pct:.1f} for this "
+                f"tract, which understates {worst['label']} at "
+                f"{worst['percentile']:.1f} — the composite averages 18 hazards, most of "
+                f"which do not apply here{OFF}"
+            )
 
 
 def main(argv: list[str] | None = None) -> int:

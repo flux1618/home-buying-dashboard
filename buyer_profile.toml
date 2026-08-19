@@ -93,3 +93,18 @@ source_url     = "https://www.spartanburgregional.com/maps"
 # lon            = -81.8880
 # arrival_window = "weekday 06:30-07:00"
 # source_url     = "https://www.spartanburgregional.com/maps"
+
+# FEMA National Risk Index hazards to report, as FEMA's four-letter codes. Regional, not
+# personal — the Upstate gets wind, tornado, hail and winter weather; wildfire and
+# earthquake are near-zero here and would just add noise. A California fork swaps this
+# list for ["WFIR", "ERQK", "DRGT", "HWAV", "LNDS"] and changes no code.
+#
+# Valid codes: AVLN CFLD CWAV DRGT ERQK HAIL HRCN HWAV IFLD ISTM LNDS LTNG SWND TRND
+#              TSUN VLCN WFIR WNTW
+#
+# caveat_percentile thresholds on the NATIONAL PERCENTILE, not on FEMA's rating label.
+# Those are different scales: a "Relatively Moderate" wildfire rating is the 95th
+# percentile in Paradise, CA. See ADR 0009 and analyzer/sources/risk.py.
+[risk]
+hazards           = ["SWND", "TRND", "HAIL", "WNTW", "HWAV", "DRGT", "WFIR"]
+caveat_percentile = 90.0

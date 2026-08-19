@@ -14,3 +14,4 @@ Format is deliberately lightweight — context, decision, alternatives, conseque
 | [0006](0006-source-station-contract.md) | Every external source is a station with one failure contract: never raise, never guess | Accepted |
 | [0007](0007-http-service-container-and-split-ci.md) | CLI, batch, and HTTP are three thin doors on one engine; CI splits offline-per-push from live-nightly | Accepted |
 | [0008](0008-browser-rules-are-compiled-not-rewritten.md) | The static page is the fourth door; its scoring rules are compiled from the profile, never hand-written | Accepted |
+| [0009](0009-hazard-risk-is-a-caveat.md) | FEMA National Risk Index reports percentiles as caveats and never deducts points; hazards are profile configuration | Accepted |

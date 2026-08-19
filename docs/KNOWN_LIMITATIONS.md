@@ -48,11 +48,35 @@ Similarly, `LivingArea` is frequently `0`, meaning *not recorded* rather than ze
 
 ---
 
-## The FEMA National Risk Index is not wired in
+## National Risk Index hazards are census-tract wide, and never affect the score
 
-**The limitation.** The National Risk Index API endpoint was unreachable during development, so broader hazard context (wildfire, wind, heat) is absent. Only the regulatory NFHL flood zone is used.
+**The limitation.** Hazard percentiles describe a **census tract**, which around Spartanburg covers several square miles and thousands of homes. The tract cannot distinguish the house on the ridge from the house in the draw a quarter mile downhill, and both get the same wildfire number. The index is also a *modeled* expected-annual-loss product, not an observation of what will happen to any particular lot.
 
-**How it's handled.** Nothing pretends to cover it. Flood is scored; other natural hazards are not assessed at all.
+**How it's handled.** It is reported, not scored — see [ADR 0009](adr/0009-hazard-risk-is-a-caveat.md). A hazard at or above the 90th percentile emits an advisory task pointing at an insurance quote, which is the number that actually prices the exposure. Nothing here can fail a house or move a point.
+
+---
+
+## FEMA's hazard rating labels are not a scale, so this tool shows percentiles
+
+**The limitation.** FEMA's five rating labels are binned separately for each hazard, against that hazard's own distribution. They look like a shared scale and are not one. The census tract containing Paradise, California reads wildfire percentile **95.2** with a rating of **"Relatively Moderate"**; that tract's all-hazard composite reads **32.3** and rates "Relatively Low".
+
+**How it's handled.** Percentiles are the reported value and the labels appear only as a note, so a reader can reconcile against FEMA's own map without the labels driving anything. The composite is never shown as a headline number and is surfaced only to point out when it understates an elevated hazard. This does mean the report asks more of the reader than a five-label scale would.
+
+---
+
+## A hazard score of zero often means "not modeled here"
+
+**The limitation.** 900 of 2,000 sampled California tracts return a wildfire score of exactly `0.0` with rating `"No Rating"`. That is FEMA declining to model the hazard there, not FEMA reporting an absence of risk. Drought has no expected-annual-loss model at all for many tracts.
+
+**How it's handled.** Any zero paired with `"No Rating"`, `"Insufficient Data"`, `"Not Applicable"` or an empty rating is recorded as `unavailable` with an explicit note that unknown is not the same as low. The report lists these separately as "not modeled here — unknown, not low". A not-modeled hazard raises no caveat, because there is nothing to caveat.
+
+---
+
+## The hazard data has a version, and percentiles move when it changes
+
+**The limitation.** The committed fixtures and the numbers in the docs come from NRI data version **December 2025**. FEMA reissues the index. When it does, percentiles shift for reasons that have nothing to do with any house, so hazard notes recorded across two versions are not comparable.
+
+**How it's handled.** The data version is recorded in the provenance note on every run, and a live contract test fails when it changes — which is a prompt to re-record `tests/fixtures/responses/nri_*.json` and re-read this file, not a bug.
 
 ---
 

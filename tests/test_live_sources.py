@@ -19,6 +19,7 @@ from analyzer.sources.base import Context
 from analyzer.sources.commute import CommuteStation
 from analyzer.sources.flood import FloodStation
 from analyzer.sources.geocode import GeocodeStation
+from analyzer.sources.risk import HAZARD_LABELS, HAZARD_SUFFIXES, RiskStation
 
 pytestmark = pytest.mark.live
 
@@ -90,3 +91,100 @@ def test_a_full_run_produces_a_scored_report(located):
     for entry in result.document["degraded_sources"]:
         assert entry["reason"], "a degradation must always explain itself"
         assert "missing" in entry
+
+
+# =============================================================================
+# FEMA National Risk Index
+# =============================================================================
+
+SC_HAZARDS = ("SWND", "TRND", "HAIL", "WNTW", "HWAV", "DRGT", "WFIR")
+
+
+def test_the_nri_layer_still_answers_for_a_spartanburg_point(located):
+    result = RiskStation(hazards=SC_HAZARDS).run(located)
+    if result.degradation:
+        pytest.skip(f"NRI unavailable: {result.degradation.reason}")
+
+    profile = result.facts["hazard_profile"]
+    assert profile["tract_fips"].startswith("45083"), "not a Spartanburg County tract"
+    assert len(profile["tract_fips"]) == 11, "census tract FIPS should be 11 digits"
+
+
+def test_percentiles_still_come_back_on_a_0_to_100_scale():
+    """If FEMA ever switches these to 0-1, every threshold in the profile silently breaks.
+
+    Nothing in the code would raise. Every hazard would simply read below every caveat
+    threshold and the tool would report that everywhere in America is fine.
+    """
+    ctx = Context(address="Paradise, CA", price=1.0, lat=39.7596, lon=-121.6219)
+    result = RiskStation(hazards=("WFIR",)).run(ctx)
+    if result.degradation:
+        pytest.skip(f"NRI unavailable: {result.degradation.reason}")
+
+    wildfire = result.values["hazard_wildfire"]
+    assert wildfire.is_available, "Paradise CA should have a modeled wildfire risk"
+    assert 1.0 < wildfire.value <= 100.0, (
+        f"wildfire percentile {wildfire.value} is not on a 0-100 scale"
+    )
+    # The Camp Fire tract. If this drops below 75 the data has changed meaningfully.
+    assert wildfire.value > 75.0
+
+
+def test_every_hazard_code_still_exists_on_the_layer():
+    """A renamed or retired hazard code would 400 the whole query, not just one field.
+
+    ArcGIS rejects the entire request if any requested outField is unknown, so one dead
+    code takes the whole hazard profile down. Asking for all 18 at once is the cheapest
+    way to find out which one moved.
+    """
+    fields = [
+        f"{code}_{suffix}" for code in HAZARD_LABELS for suffix in HAZARD_SUFFIXES
+    ]
+    from analyzer.sources import risk
+
+    try:
+        payload = http.get_json(
+            http.build_url(
+                risk.NRI_QUERY,
+                {
+                    "geometry": "-81.97665,34.943051",
+                    "geometryType": "esriGeometryPoint",
+                    "inSR": 4326,
+                    "spatialRel": "esriSpatialRelIntersects",
+                    "outFields": ",".join(fields),
+                    "returnGeometry": "false",
+                    "f": "json",
+                },
+            )
+        ).data
+    except (http.SourceUnavailable, http.SourceRejected) as exc:
+        pytest.skip(f"NRI unavailable: {exc}")
+
+    assert "error" not in payload, (
+        f"NRI rejected the hazard field list, so a code or suffix changed: "
+        f"{payload.get('error')}"
+    )
+    attrs = payload["features"][0]["attributes"]
+    missing = [f for f in fields if f not in attrs]
+    assert not missing, f"fields no longer returned: {missing}"
+
+
+def test_the_nri_data_version_is_still_the_one_the_fixtures_were_recorded_from():
+    """Not a failure condition \u2014 a prompt to re-record fixtures and re-read the notes.
+
+    FEMA reissues the index. When it does, percentiles shift for reasons that have nothing
+    to do with any house, and a decision journal comparing scores across versions is
+    comparing two different scales.
+    """
+    from analyzer.sources import risk
+
+    ctx = Context(address="Spartanburg", price=1.0, lat=34.943051, lon=-81.97665)
+    result = risk.RiskStation(hazards=()).run(ctx)
+    if result.degradation:
+        pytest.skip(f"NRI unavailable: {result.degradation.reason}")
+
+    note = result.values["nri_tract_fips"].note or ""
+    assert "December 2025" in note, (
+        f"NRI data version changed: {note}. Re-record tests/fixtures/responses/nri_*.json "
+        f"and check docs/KNOWN_LIMITATIONS.md."
+    )

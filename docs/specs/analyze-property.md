@@ -1,10 +1,12 @@
 # Spec — Analyze a Property
 
-The first vertical slice. One input, one output, six stations. Address in, scored and fully-sourced verdict out.
+The first vertical slice. One input, one output, seven stations. Address in, scored and fully-sourced verdict out.
 
 Deliberately narrow: this is one complete path rather than several partial features. It touches every layer of the system, so building it proves the architecture works end to end.
 
-**Mnemonic — GAFCBS:** Geocode, Assess, FEMA, Commute, Broadband, Score.
+**Mnemonic — GAFRCBS:** Geocode, Assess, FEMA flood, Risk index, Commute, Broadband, Score.
+
+Flood and Risk are both FEMA and sit next to each other, but only one of them can fail a house. The flood zone is a hard fail. Everything the risk index returns is a caveat — see [ADR 0009](../adr/0009-hazard-risk-is-a-caveat.md).
 
 ---
 
@@ -30,13 +32,13 @@ Only `address` is required. Everything else is optional; missing fields produce 
 
 ---
 
-## The six stations
+## The seven stations
 
 Each station is an independent adapter in `sources/`. Each one can fail without failing the analysis. The failure contract they share is recorded in [ADR 0006](../adr/0006-source-station-contract.md).
 
 ### As built: the endpoints, and which ones actually work
 
-What follows was verified against live endpoints on 2026-08-19, not read off documentation. Two of the six intended sources do not work as designed, which is why the degradation contract exists.
+What follows was verified against live endpoints on 2026-08-19, not read off documentation. Two of the intended sources do not work as designed, which is why the degradation contract exists.
 
 | Station | Endpoint | Status |
 |---|---|---|
@@ -47,7 +49,7 @@ What follows was verified against live endpoints on 2026-08-19, not read off doc
 | Flood | `hazards.fema.gov/arcgis/rest/services/public/NFHL/MapServer/28/query` | Works with a simple `x,y` point geometry |
 | Commute | `router.project-osrm.org/route/v1/driving/{lon},{lat};{lon},{lat}` | Works. Free-flow duration in seconds |
 | Broadband | `broadbandmap.fcc.gov` | **Requires a key** — HTTP 401 anonymously, no free tier |
-| Hazard extras | `hazards.fema.gov/nri/api/...` | Unreachable. Not wired in |
+| Risk index | `services.arcgis.com/XG15cJAlne2vxtgt/.../National_Risk_Index_Census_Tracts/FeatureServer/0/query` | Works, no key. 469 fields, all 18 hazards, census-tract resolution. Data version December 2025 |
 
 Two query details cost real debugging time and are worth recording:
 
@@ -107,8 +109,18 @@ Insurance uses the SC statewide average ([LendingTree](https://www.lendingtree.c
 ### 3. FEMA — hazard
 
 - **Flood zone** from the [NFHL](https://msc.fema.gov/portal/home). A Special Flood Hazard Area (A or AE) is a hard fail.
-- **National Risk Index** for the census tract — broader hazard context. Tract-level, so it describes the neighborhood, not the lot.
 - **Failure:** flood zone `unavailable`, hard fail cannot be evaluated, and a blocking verification task is emitted. The analysis does not silently pass a house whose flood status is unknown.
+
+### 3b. Risk index — the caveat layer
+
+The [National Risk Index](https://www.fema.gov/flood-maps/products-tools/national-risk-index) for the census tract. Tract-level, so it describes the neighbourhood, not the lot, and it never moves the score.
+
+- Which hazards get reported is **profile configuration**, not code. Spartanburg asks for wind, tornado, hail, winter weather, heat, drought and wildfire; a California fork asks for wildfire, earthquake, drought, heat and landslide and changes nothing else.
+- **Percentiles are the value; FEMA's rating labels are a note.** The five rating labels are binned separately for each hazard, so they are not a shared scale. The tract containing Paradise, California reads wildfire percentile 95.2 with a wildfire rating of "Relatively Moderate".
+- **A score of 0 with rating "No Rating" means not modeled, not safe.** It is reported as `unavailable`, because a house cannot be credited for a hazard nobody measured.
+- The **all-hazard composite is not shown as a headline.** It averages all 18 hazards, most of which apply nowhere, so Paradise rates 32nd percentile composite. It is surfaced only when it materially understates a genuinely elevated hazard, and then only to say so.
+- **Social vulnerability** and **community resilience** are reported alongside. High vulnerability with low resilience raises a recovery caveat — the same storm costs more, for longer, in a place less equipped to rebuild.
+- **Failure:** `hazard_profile` missing, station degraded, nothing blocked. No hard fail depends on this station.
 
 ### 4. Commute — rush hour, not free flow
 

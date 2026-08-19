@@ -1,11 +1,16 @@
-"""The line: address in, scored analysis out. GAFCBS.
+"""The line: address in, scored analysis out. GAFRCBS.
 
     G  geocode     address -> lat/lon + census block          FATAL
     A  assess      county parcel / CAMA record
     F  flood       FEMA National Flood Hazard Layer
+    R  risk        FEMA National Risk Index, 18 hazards at the tract
     C  commute     OSRM drive time to the anchor
     B  broadband   FCC availability by census block
     S  score       the pure engine from Session 1
+
+R sits next to F because they are the same agency answering two different questions, and
+keeping them adjacent makes it obvious that only one of them can fail a house. Flood zone
+is a hard fail; everything the risk station returns is a caveat.
 
 Stations run in that order because each depends on what came before, and only G is
 fatal — without coordinates there is nothing to ask anyone about. Any other station going
@@ -37,6 +42,7 @@ from .sources.commute import CommuteStation
 from .sources.flood import FloodStation
 from .sources.geocode import GeocodeStation
 from .sources.parcel import ParcelStation
+from .sources.risk import RiskStation
 
 
 class PipelineAborted(RuntimeError):
@@ -67,6 +73,10 @@ def build_stations(profile: BuyerProfile, api_keys: dict[str, str]) -> list[Stat
         GeocodeStation(),
         ParcelStation(),
         FloodStation(),
+        RiskStation(
+            hazards=profile.hazards,
+            caveat_percentile=profile.hazard_caveat_percentile,
+        ),
         CommuteStation(profile.primary_anchor),
         BroadbandStation(api_key=api_keys.get("fcc")),
     ]
@@ -167,6 +177,13 @@ def run(
         "degraded": [d.station for d in degradations],
         "complete": not degradations,
     }
+    # Carried on the document rather than into PropertyFacts on purpose: the hazard
+    # profile is reporting, not scoring, and PropertyFacts is the scoring engine's input.
+    # Putting it there would make it look like it counts.
+    hazard_profile = ctx.facts.get("hazard_profile")
+    if hazard_profile:
+        document["hazard_profile"] = hazard_profile
+
     if ctx.lat is not None:
         document["location"] = {
             "requested_address": address,

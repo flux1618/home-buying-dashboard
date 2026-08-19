@@ -95,6 +95,14 @@ class BuyerProfile:
     anchors: tuple[Anchor, ...] = field(default_factory=tuple)
     millage_district: str | None = None
 
+    # Which FEMA NRI hazards to report, as four-letter codes, and the percentile at
+    # which one earns a caveat. Regional, not personal: South Carolina cares about wind
+    # and tornado, California cares about wildfire and earthquake, and neither list is a
+    # code change. Defaults are empty and 90.0 so a profile written before the risk
+    # station existed still loads and simply reports no hazards.
+    hazards: tuple[str, ...] = ()
+    hazard_caveat_percentile: float = 90.0
+
     @property
     def monthly_income(self) -> float:
         return self.gross_annual_income / 12.0
@@ -124,6 +132,8 @@ def load_profile(path: Path | str | None = None) -> BuyerProfile:
     capex = raw["capital_expenses"]
     cav = raw["caveats"]
     verdict = raw["verdict"]
+    # Optional: a profile predating the risk station has no [risk] table at all.
+    risk = raw.get("risk", {})
 
     anchors = tuple(
         Anchor(
@@ -167,4 +177,6 @@ def load_profile(path: Path | str | None = None) -> BuyerProfile:
         unevaluated_score=verdict["unevaluated_score"],
         anchors=anchors,
         millage_district=raw.get("tax", {}).get("millage_district"),
+        hazards=tuple(risk.get("hazards", ())),
+        hazard_caveat_percentile=float(risk.get("caveat_percentile", 90.0)),
     )

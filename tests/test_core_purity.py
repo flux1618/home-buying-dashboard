@@ -83,20 +83,54 @@ def test_core_never_imports_the_sources_layer():
     )
 
 
+# Facts a station may provide that are deliberately *not* scoring inputs. Everything a
+# station provides normally has to land on PropertyFacts, because a fact that reaches
+# nothing is dead weight and usually means a typo. These are the documented exceptions:
+# reporting-only facts that travel on the analysis document for a human to read and are
+# invisible to the engine.
+#
+# Adding to this set is a design decision, not a fix. If a value should move the score,
+# put it on PropertyFacts and score it. If it should inform without deciding, put it here
+# and write down why.
+REPORTING_ONLY_FACTS = {
+    # FEMA National Risk Index hazard percentiles. Caveats, never deductions — the ratings
+    # are binned per hazard rather than on a shared scale, so they cannot be combined into
+    # a defensible points penalty, and pricing hazard exposure is what an insurance quote
+    # is for. See docs/adr/0009-hazard-risk-is-a-caveat.md.
+    "hazard_profile",
+}
+
+
 def test_every_station_declares_what_it_provides():
     """A station may only write facts it declared, so the data flow stays readable."""
     from analyzer.core.scoring import PropertyFacts
     from analyzer.pipeline import build_stations
     from analyzer.core.profile import load_profile
 
-    known = set(PropertyFacts.__dataclass_fields__)
+    known = set(PropertyFacts.__dataclass_fields__) | REPORTING_ONLY_FACTS
     for station in build_stations(load_profile(), {}):
         assert station.name, "every station needs a name"
         undeclared = set(station.provides) - known
         assert not undeclared, (
             f"station {station.name!r} claims to provide {sorted(undeclared)}, "
-            f"which are not fields on PropertyFacts"
+            f"which are neither fields on PropertyFacts nor declared reporting-only "
+            f"in REPORTING_ONLY_FACTS"
         )
+
+
+def test_reporting_only_facts_really_are_invisible_to_the_engine():
+    """The exemption above must stay an exemption, not become a back door.
+
+    If a name appears both in REPORTING_ONLY_FACTS and on PropertyFacts, the comment
+    claiming it does not affect scoring is false and every score in the decision journal
+    quietly stops being reproducible.
+    """
+    from analyzer.core.scoring import PropertyFacts
+
+    overlap = REPORTING_ONLY_FACTS & set(PropertyFacts.__dataclass_fields__)
+    assert not overlap, (
+        f"{sorted(overlap)} is documented as reporting-only but is a scoring input"
+    )
 
 
 def test_core_is_importable_with_no_third_party_deps():

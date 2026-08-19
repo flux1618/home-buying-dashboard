@@ -183,7 +183,7 @@ def create_app() -> FastAPI:
     def sources() -> dict[str, Any]:
         """Which stations exist, what each one provides, and which are fatal.
 
-        This is the honest-limitations endpoint. Two of the six sources do not work as
+        This is the honest-limitations endpoint. Two of the seven sources do not work as
         originally designed — the authoritative county server has a broken certificate
         chain and the FCC map needs a key — and a caller deserves to see that before
         trusting a number, not after.
@@ -191,7 +191,10 @@ def create_app() -> FastAPI:
         from analyzer.pipeline import build_stations
 
         return {
-            "mnemonic": "GAFCBS — Geocode, Assess, FEMA, Commute, Broadband, Score",
+            "mnemonic": (
+                "GAFRCBS — Geocode, Assess, FEMA flood, Risk index, Commute, "
+                "Broadband, Score"
+            ),
             "stations": [
                 {"name": s.name, "provides": list(s.provides), "fatal": s.fatal}
                 for s in build_stations(profile(), {})

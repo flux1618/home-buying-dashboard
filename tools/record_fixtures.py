@@ -18,7 +18,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from analyzer.sources import commute, flood, geocode, http, parcel  # noqa: E402
+from analyzer.sources import commute, flood, geocode, http, parcel, risk  # noqa: E402
 from analyzer.core.profile import load_profile  # noqa: E402
 
 OUT = Path(__file__).resolve().parent.parent / "tests" / "fixtures" / "responses"
@@ -86,6 +86,39 @@ def main(address: str) -> int:
                 },
             )
         ).data,
+    )
+
+    def nri(lon_: float, lat_: float, hazards: tuple[str, ...]) -> object:
+        nri_fields = list(risk.BASE_FIELDS) + [
+            f"{code}_{suffix}" for code in hazards for suffix in risk.HAZARD_SUFFIXES
+        ]
+        return http.get_json(
+            http.build_url(
+                risk.NRI_QUERY,
+                {
+                    "geometry": f"{lon_},{lat_}",
+                    "geometryType": "esriGeometryPoint",
+                    "inSR": 4326,
+                    "spatialRel": "esriSpatialRelIntersects",
+                    "outFields": ",".join(nri_fields),
+                    "returnGeometry": "false",
+                    "f": "json",
+                },
+            )
+        ).data
+
+    save("nri_tract", nri(lon, lat, profile.hazards))
+
+    # Paradise, California - tract 06007002100. Recorded deliberately as a second fixture
+    # because it is the case that proves ratings and percentiles are different scales:
+    # wildfire percentile 95.2, wildfire rating "Relatively Moderate", and a composite
+    # rating of "Relatively Low" for the town the Camp Fire destroyed. A Spartanburg
+    # fixture alone cannot catch a regression that reintroduces label-based scoring.
+    # The hazard list is the California one, not this profile's, because the point of the
+    # fixture is to exercise a fork's configuration as well as its geography.
+    save(
+        "nri_tract_wildfire",
+        nri(-121.6219, 39.7596, ("WFIR", "ERQK", "DRGT", "HWAV", "LNDS")),
     )
 
     anchor = profile.primary_anchor
