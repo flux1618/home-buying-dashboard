@@ -2,7 +2,9 @@
 
 A single-page decision tool that turns a home-buying question into a structured, source-cited answer. Built to demonstrate how I use AI as a research force multiplier — not as a decision-maker — for a real-world, high-stakes decision.
 
-**Live:** [spartanburg.pplx.app](https://spartanburg.pplx.app)
+**Live:** 
+[https://flux1618.github.io/home-buying-dashboard](https://flux1618.github.io/home-buying-dashboard)
+
 
 <a href="docs/dashboard-full.jpg"><img src="docs/dashboard-hero.jpg" alt="Home-Buying Decision Dashboard — submarket map with price, drive-time, and flood-risk layers, above the Spartanburg County market snapshot" width="100%"></a>
 
