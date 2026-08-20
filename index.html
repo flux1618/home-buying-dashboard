@@ -125,6 +125,17 @@ textarea{width:100%;min-height:120px;background:var(--surface-2);border:1px soli
 .checklist li{padding:6px 0;border-bottom:1px dashed var(--divider);font-size:var(--text-sm);color:var(--text-muted);display:flex;gap:8px}
 .checklist li:before{content:"◇";color:var(--primary)}
 
+/* Rate band is hand-drawn SVG rather than another Chart.js canvas. It only has eleven
+   fixed points, and direct SVG labels remain crisp in screenshots and when the page prints. */
+.sensitivity-grid{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(240px,.8fr);gap:var(--space-4);align-items:start}
+.sensitivity-chart{display:block;width:100%;min-height:230px;background:var(--surface-2);border:1px solid var(--border);border-radius:8px}
+.sensitivity-side{display:grid;gap:var(--space-3)}
+.sensitivity-table{font-size:var(--text-xs)}
+.sensitivity-table td,.sensitivity-table th{padding:7px 8px}
+.sensitivity-table tr.anchor td{background:color-mix(in srgb,var(--primary) 12%,transparent)}
+.sensitivity-table td:last-child,.sensitivity-table th:last-child{text-align:right}
+#rate-sensitivity{scroll-margin-top:64px}
+@media(max-width:760px){.sensitivity-grid{grid-template-columns:1fr}.sensitivity-chart{min-height:210px}}
 .footer-note{color:var(--text-faint);font-size:var(--text-xs);margin-top:var(--space-6);border-top:1px solid var(--divider);padding-top:var(--space-4)}
 .footer-note a{color:var(--text-muted)}
 /* No global anchor rule existed, so any new link fell back to the browser's default blue —
@@ -161,6 +172,7 @@ textarea{width:100%;min-height:120px;background:var(--surface-2);border:1px soli
       <a href="#kpi">Market snapshot</a>
       <a href="#afford">Affordability</a>
       <a href="#amort">Amortization</a>
+      <a href="#rate-sensitivity">Rate sensitivity</a>
       <a href="#break-even">Rent vs buy</a>
       <a href="#scorecard">Submarket scores</a>
       <a href="#hazard">Hazard risk</a>
@@ -287,6 +299,26 @@ textarea{width:100%;min-height:120px;background:var(--surface-2);border:1px soli
 
       <div class="formula" style="margin-top:12px">interest = balance &times; rate/12 &nbsp;&middot;&nbsp; principal = payment &minus; interest &nbsp;&middot;&nbsp; balance &minus;= principal + extra &nbsp;&middot;&nbsp; last payment = balance + interest, not the level payment</div>
       <div class="callout" id="a-excludes"></div>
+    </section>
+
+    <!-- RATE SENSITIVITY -->
+    <section id="rate-sensitivity">
+      <h2>Rate sensitivity band · one house, 5.00%–7.50%</h2>
+      <div class="sub">The chart holds your price, down payment, HOA, tax and insurance inputs fixed, then moves only the 30-year rate. The vertical marker is the rate slider above — an assumption, not a rate forecast.</div>
+      <div class="sensitivity-grid">
+        <div>
+          <svg id="rate-band-chart" class="sensitivity-chart" viewBox="0 0 720 250" role="img" aria-label="Monthly full PITI across mortgage rates from five percent through seven point five percent"></svg>
+          <div class="small-src">Full PITI includes principal and interest, estimated owner-occupied tax, statewide-average insurance, and HOA. It does not include mortgage insurance, which remains unmodeled.</div>
+        </div>
+        <div class="sensitivity-side">
+          <div class="kpi"><div class="k">At the rate slider</div><div class="v numeric" id="rate-band-anchor">—</div><div class="d" id="rate-band-anchor-d">Full PITI / month</div></div>
+          <div class="kpi"><div class="k">5.00% → 7.50%</div><div class="v numeric" id="rate-band-spread">—</div><div class="d" id="rate-band-spread-d">Same house, full PITI delta</div></div>
+          <div class="callout" id="rate-wait-note" style="margin:0"></div>
+        </div>
+      </div>
+      <div style="overflow-x:auto;margin-top:var(--space-3)">
+        <table class="sensitivity-table"><thead><tr><th>Rate</th><th class="num">Full PITI / mo</th><th class="num">P &amp; I / mo</th><th class="num">Interest, 30 yr</th></tr></thead><tbody id="rate-band-table"></tbody></table>
+      </div>
     </section>
 
     <!-- RENT vs BUY -->

@@ -267,6 +267,7 @@ function updateAll(){
   document.getElementById('k-ctc').textContent = fmt$(down + closing);
   renderMaxPrice(inc, down, rate, hoa, dti);
   renderAmortization(price, down, rate);
+  renderRateSensitivity(price, down, rate, hoa);
 
   // Verdict
   const rentEq = 2200; // Spartanburg 3-bed rent baseline
@@ -422,6 +423,116 @@ function pmt(loan, rate, n){
   if(loan <= 0) return 0;
   const r = rate/12;
   return r>0 ? loan*(r*Math.pow(1+r,n))/(Math.pow(1+r,n)-1) : loan/n;
+}
+
+/* ---------------- RATE SENSITIVITY ----------------
+
+   A rate sweep is behaviour, not a profile rule table. ADR 0008 therefore permits this second
+   implementation only with an audit: tests/test_sensitivity_parity.py runs these functions in
+   node and checks every displayed cent against analyzer.core.sensitivity with zero tolerance.
+   The loop uses integer basis points, and money crosses this boundary as integer cents, so a
+   one-cent difference is a bug rather than an acceptable browser rounding difference. */
+function sensitivityBand(price, down, startBps, endBps, stepBps, hoa){
+  if(startBps > endBps || stepBps <= 0 || (endBps-startBps)%stepBps) return null;
+  const loanCents = Math.round(Math.max(0, price-down)*100);
+  const rows = [];
+  for(let rateBps=startBps; rateBps<=endBps; rateBps+=stepBps){
+    const rate = rateBps/10000;
+    const parts = pitiParts(price, down, rate, hoa);
+    const piCents = Math.round(parts.pi*100);
+    rows.push({
+      rateBps,
+      piCents,
+      pitiCents:Math.round(parts.piti*100),
+      totalInterestCents:piCents*360-loanCents
+    });
+  }
+  return rows;
+}
+function priceAtPitiCents(targetPitiCents, down, rate, startingPrice, hoa){
+  const at = priceCents => Math.round(pitiParts(priceCents/100, down, rate, hoa).piti*100);
+  let lo = 1, hi = Math.max(Math.round(startingPrice*100), Math.round(down*100), 100);
+  if(at(lo)>targetPitiCents) return null;
+  let bracketed = false;
+  for(let i=0;i<60;i++){
+    if(at(hi)>=targetPitiCents){ bracketed=true; break; }
+    hi*=2;
+  }
+  if(!bracketed) return null;
+  while(hi-lo>1){
+    const mid = Math.floor((lo+hi)/2);
+    if(at(mid)<=targetPitiCents) lo=mid; else hi=mid;
+  }
+  return lo;
+}
+function waitVsBuy(price, down, baselineRate, futureRate, futurePrice, hoa){
+  const base = pitiParts(price, down, baselineRate, hoa);
+  const future = pitiParts(futurePrice, down, futureRate, hoa);
+  const basePiCents = Math.round(base.pi*100), futurePiCents = Math.round(future.pi*100);
+  const basePitiCents = Math.round(base.piti*100), futurePitiCents = Math.round(future.piti*100);
+  const baseLoanCents = Math.round(Math.max(0,price-down)*100);
+  const futureLoanCents = Math.round(Math.max(0,futurePrice-down)*100);
+  const breakEvenPriceCents = priceAtPitiCents(basePitiCents, down, futureRate, price, hoa);
+  return {
+    baselinePitiCents:basePitiCents, futurePitiCents,
+    monthlyDeltaCents:futurePitiCents-basePitiCents,
+    lifetimeInterestDeltaCents:(futurePiCents*360-futureLoanCents)-(basePiCents*360-baseLoanCents),
+    breakEvenPriceCents,
+    breakEvenPriceChangeCents:breakEvenPriceCents===null?null:breakEvenPriceCents-Math.round(price*100)
+  };
+}
+function renderRateSensitivity(price, down, rate, hoa){
+  const rows = sensitivityBand(price, down, 500, 750, 25, hoa);
+  if(!rows) return;
+  const svg = document.getElementById('rate-band-chart');
+  // Give the SVG a coordinate system that equals its rendered box. A fixed 720px viewBox made
+  // the 12px axis labels shrink to illegible 5px type on a 390px phone, even though the chart
+  // itself still fit. This retains the same geometry while keeping type at actual CSS pixels.
+  const chartWidth=Math.max(280,Math.round(svg.clientWidth||720));
+  const chartHeight=Math.max(210,Math.round(svg.clientHeight||250));
+  svg.setAttribute('viewBox',`0 0 ${chartWidth} ${chartHeight}`);
+  const left=chartWidth<460?48:64, right=chartWidth<460?12:22, top=20, bottom=38;
+  const width=chartWidth-left-right, height=chartHeight-top-bottom;
+  const min=Math.min(...rows.map(r=>r.pitiCents)), max=Math.max(...rows.map(r=>r.pitiCents));
+  const span=Math.max(max-min,1), y = cents => top+height-(cents-min)/span*height;
+  const x = bps => left+(bps-500)/(750-500)*width;
+  const line = rows.map((r,i)=>`${i?'L':'M'}${x(r.rateBps).toFixed(1)},${y(r.pitiCents).toFixed(1)}`).join(' ');
+  const area = `${line} L${x(rows[rows.length-1].rateBps).toFixed(1)},${top+height} L${x(rows[0].rateBps).toFixed(1)},${top+height} Z`;
+  const text=getCss('--text-muted'), grid=getCss('--divider'), primary=getCss('--primary'), gold=getCss('--gold');
+  const gridlines=[0,.25,.5,.75,1].map(t=>{
+    const yy=top+height-height*t, dollars=(min+span*t)/100;
+    return `<line x1="${left}" x2="${left+width}" y1="${yy}" y2="${yy}" stroke="${grid}" stroke-width="1"/><text x="${left-8}" y="${yy+4}" text-anchor="end" fill="${text}" font-size="12">$${(dollars/1000).toFixed(1)}K</text>`;
+  }).join('');
+  // The end labels are anchored inward rather than centred. Centred, half of "7.50%" sits
+  // outside the plot, and on a 390px phone the right margin is 12px -- so the last label was
+  // clipped by the SVG edge. Anchoring the ends keeps every label inside the box at any width.
+  const xlabels=[500,625,750].map(bps=>{
+    const anchor=bps===500?'start':bps===750?'end':'middle';
+    return `<text x="${x(bps)}" y="${top+height+25}" text-anchor="${anchor}" fill="${text}" font-size="12">${(bps/100).toFixed(2)}%</text>`;
+  }).join('');
+  const rawMarkerBps=Math.round(rate*10000);
+  const markerBps=Math.max(500,Math.min(750,rawMarkerBps));
+  const outsideBand=rawMarkerBps<500||rawMarkerBps>750;
+  const markerAnchor=rawMarkerBps>750?'end':rawMarkerBps<500?'start':'middle';
+  const markerLabel=`slider ${(rawMarkerBps/100).toFixed(2)}%${outsideBand?' · outside band':''}`;
+  svg.innerHTML=`<title>Full PITI rises as the rate rises, holding the same house constant.</title>${gridlines}<path d="${area}" fill="${primary}" opacity=".12"/><path d="${line}" fill="none" stroke="${primary}" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/><line x1="${x(markerBps)}" x2="${x(markerBps)}" y1="${top}" y2="${top+height}" stroke="${gold}" stroke-width="2" stroke-dasharray="5 4"/><text x="${x(markerBps)}" y="14" text-anchor="${markerAnchor}" fill="${gold}" font-size="12">${markerLabel}</text>${rows.map(r=>`<circle cx="${x(r.rateBps)}" cy="${y(r.pitiCents)}" r="3.5" fill="${primary}"/>`).join('')}${xlabels}<text x="${left}" y="14" fill="${text}" font-size="12">Full PITI / month</text>`;
+
+  const nearest=rows.reduce((best,row)=>Math.abs(row.rateBps-rate*10000)<Math.abs(best.rateBps-rate*10000)?row:best,rows[0]);
+  document.getElementById('rate-band-anchor').textContent=fmt$(nearest.pitiCents/100);
+  document.getElementById('rate-band-anchor-d').textContent=`Nearest band point: ${(nearest.rateBps/100).toFixed(2)}% full PITI / mo`;
+  const spread=rows[rows.length-1].pitiCents-rows[0].pitiCents;
+  document.getElementById('rate-band-spread').textContent='+'+fmt$(spread/100);
+  document.getElementById('rate-band-spread-d').textContent=`${(rows[0].rateBps/100).toFixed(2)}% to ${(rows[rows.length-1].rateBps/100).toFixed(2)}% on the same inputs`;
+  document.getElementById('rate-band-table').innerHTML=rows.map(row=>`<tr class="${row.rateBps===nearest.rateBps?'anchor':''}"><td>${(row.rateBps/100).toFixed(2)}%</td><td class="num">${fmt$(row.pitiCents/100)}</td><td class="num">${fmt$(row.piCents/100)}</td><td class="num">${fmt$(row.totalInterestCents/100)}</td></tr>`).join('');
+
+  // Waiting is intentionally just a disclosed +25 bp stress test at the same listed price.
+  // It says nothing about where rates or prices will go; the solved break-even price shows why
+  // a lower rate paired with a higher price can still lose.
+  const futureRate=rate+.0025;
+  const wait=waitVsBuy(price, down, rate, futureRate, price, hoa);
+  const be=wait.breakEvenPriceCents===null?'unavailable':fmt$(wait.breakEvenPriceCents/100);
+  const change=wait.breakEvenPriceChangeCents===null?'':` (${wait.breakEvenPriceChangeCents>=0?'+':''}${fmt$(wait.breakEvenPriceChangeCents/100)} vs today)`;
+  document.getElementById('rate-wait-note').innerHTML=`<b>Wait stress test, not a forecast.</b> If the rate were ${(futureRate*100).toFixed(2)}% instead of ${(rate*100).toFixed(2)}% and price stayed ${fmt$(price)}, full PITI would change ${wait.monthlyDeltaCents>=0?'+':''}${fmt$(wait.monthlyDeltaCents/100)}/mo and term interest ${wait.lifetimeInterestDeltaCents>=0?'+':''}${fmt$(wait.lifetimeInterestDeltaCents/100)}. At that later rate, ${be}${change} is the price that restores today’s PITI. Mortgage insurance is not modeled.`;
 }
 
 function renderMaxPrice(inc, down, rate, hoa, dtiPct){
