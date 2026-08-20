@@ -1,9 +1,11 @@
 """The page's max-price solver across the full range of the household gross slider.
 
-The slider now spans $0 to $10M, which walks the solver into two edges that the old
-$150K-$600K range could not reach: a zero denominator on the left, and a DTI ceiling so
-high that no price inside the search bracket ever breaches it on the right. Neither edge
-is hypothetical any more, so both get a test.
+The slider spans $50K to $2M. The right edge is reachable in the UI: at a 22% cap the
+search ceiling starts binding around $1.99M of gross income, and at the slider's 36% cap
+it binds from about $1.22M, so the top third of the range can land there. The left edge no
+longer reaches $0 income, but the zero-income guard stays tested -- `solveMaxPrice` is
+called from `renderMaxPrice` with whatever the DOM holds, and a future slider bound, a URL
+parameter or a hand-edited input should not be able to divide by zero unnoticed.
 
 The right edge is the one that matters. `analyzer/core/cost.py` bisects up to a
 `_SOLVER_CEILING` and, on reaching it, attaches a note saying the ceiling was reached
@@ -41,7 +43,7 @@ console.log(JSON.stringify(
 """
 
 
-def solve_in_browser(incomes, down=80_000.0, rate=0.067, hoa=0.0, dti_pct=22.0):
+def solve_in_browser(incomes, down=80_000.0, rate=0.0667, hoa=0.0, dti_pct=22.0):
     node = shutil.which("node")
     if not node:
         if os.environ.get("HBA_REQUIRE_NODE"):
@@ -65,11 +67,21 @@ def solve_in_browser(incomes, down=80_000.0, rate=0.067, hoa=0.0, dti_pct=22.0):
 
 
 class TestSliderRange:
-    def test_the_income_slider_spans_zero_to_ten_million(self):
+    def test_the_income_slider_spans_fifty_thousand_to_two_million(self):
         html = (REPO / "index.html").read_text()
         tag = re.search(r'<input id="i-inc"[^>]*>', html).group(0)
-        assert 'min="0"' in tag
-        assert 'max="10000000"' in tag
+        assert 'min="50000"' in tag
+        assert 'max="2000000"' in tag
+
+    def test_the_slider_resolves_finer_than_ten_thousand_dollars_a_pixel(self):
+        # Not decoration. The household's own income is ~$406K, and a range wide enough to
+        # make that unreachable by dragging is a range that cannot answer the question the
+        # page exists for. 249px of track is what the sidebar gives at 1600px wide.
+        html = (REPO / "index.html").read_text()
+        tag = re.search(r'<input id="i-inc"[^>]*>', html).group(0)
+        lo = float(re.search(r'min="(\d+)"', tag).group(1))
+        hi = float(re.search(r'max="(\d+)"', tag).group(1))
+        assert (hi - lo) / 249 < 10_000
 
     def test_the_page_solver_ceiling_matches_the_engine(self):
         # Two solvers, one number. If either side moves, they stop agreeing about where the
@@ -80,6 +92,8 @@ class TestSliderRange:
 
 
 class TestZeroIncome:
+    """Not slider-reachable at the current bounds. Kept because the guard is the reason."""
+
     def test_zero_income_is_undefined_not_infeasible(self):
         # Not the "fixed costs are the binding constraint" answer: nothing about a cheaper
         # house or a smaller loan is the fix when the denominator is the problem.
@@ -95,18 +109,39 @@ class TestZeroIncome:
 
 
 class TestHighIncome:
-    def test_ten_million_reports_the_search_ceiling_rather_than_a_maximum(self):
-        (s,) = solve_in_browser([10_000_000])
+    def test_the_top_of_the_slider_reports_the_search_ceiling_rather_than_a_maximum(self):
+        # At the slider's loose end of the DTI range the ceiling is reached with room to
+        # spare, so this is the stable case to assert on.
+        (s,) = solve_in_browser([2_000_000], dti_pct=36.0)
         assert s["feasible"] is True
         assert s["capped"] is True
         assert s["price"] == cost._SOLVER_CEILING
+
+    def test_a_higher_dti_setting_reaches_the_ceiling_earlier(self):
+        # The cap is a function of both sliders, so the 36% end of the DTI slider pulls the
+        # crossover down well inside the income range. Documented, not incidental.
+        (tight,) = solve_in_browser([1_500_000], dti_pct=22.0)
+        (loose,) = solve_in_browser([1_500_000], dti_pct=36.0)
+        assert tight.get("capped") is not True
+        assert loose["capped"] is True
+
+    def test_the_top_of_the_slider_sits_on_the_ceiling_boundary_at_the_default_cap(self):
+        # Worth pinning rather than leaving as a surprise: at 22% and $2M the crossover is
+        # around $1.99M of income, so a single 5bp step of the rate slider flips the answer
+        # between a solved maximum and "ceiling reached". Both readings are correct; the
+        # point is that the boundary lives inside the slider's range, not outside it.
+        (at_page_default,) = solve_in_browser([2_000_000], rate=0.0667, dti_pct=22.0)
+        (one_step_up,) = solve_in_browser([2_000_000], rate=0.0672, dti_pct=22.0)
+        assert at_page_default["capped"] is True
+        assert one_step_up.get("capped") is not True
+        assert one_step_up["price"] > 0.9 * cost._SOLVER_CEILING
 
     def test_the_engine_flags_the_same_ceiling_in_its_notes(self):
         from analyzer.core.profile import load_profile
         from dataclasses import replace
 
         profile = load_profile()
-        profile = replace(profile, gross_annual_income=10_000_000.0, down_payment=80_000.0)
+        profile = replace(profile, gross_annual_income=2_000_000.0, down_payment=80_000.0)
         s = cost.solve_max_price(profile, sqft=1650, hoa_monthly=0.0, current_year=2026)
         assert s.lender_max_price == cost._SOLVER_CEILING
         assert any("ceiling" in n for n in s.notes)
