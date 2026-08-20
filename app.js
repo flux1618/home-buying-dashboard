@@ -251,7 +251,10 @@ function updateAll(){
   // function instead of two copies of the same formula.
   const parts = pitiParts(price, down, rate, hoa);
   const pi = parts.pi, taxMo = parts.tax, insMo = parts.ins, piti = parts.piti;
-  const fdti = piti / (inc/12);
+  // The income slider bottoms out at $0, so this division is reachable from the UI. At zero
+  // income every DTI is undefined rather than infinite: there is no share of nothing. Say
+  // that instead of printing "Infinity%", which reads as a bug rather than as an input.
+  const fdti = inc > 0 ? piti / (inc/12) : null;
   const closing = price * 0.03;
   document.getElementById('k-loan').textContent = fmt$(loan);
   document.getElementById('k-loan-d').textContent = `Price ${fmt$(price)} − Down ${fmt$(down)}`;
@@ -260,9 +263,10 @@ function updateAll(){
   document.getElementById('k-ins').textContent = fmt$(insMo);
   document.getElementById('k-hoa').textContent = fmt$(hoa);
   document.getElementById('k-piti').textContent = fmt$(piti);
-  document.getElementById('k-fdti').textContent = (fdti*100).toFixed(1)+'%';
+  document.getElementById('k-fdti').textContent = fdti===null ? '—' : (fdti*100).toFixed(1)+'%';
   const fEl=document.getElementById('k-fdti-d');
-  if(fdti*100 <= dti){ fEl.textContent = `Under ${dti}% target ✓`; fEl.className='d up'; }
+  if(fdti===null){ fEl.textContent = 'No income entered — DTI is undefined'; fEl.className='d'; }
+  else if(fdti*100 <= dti){ fEl.textContent = `Under ${dti}% target ✓`; fEl.className='d up'; }
   else{ fEl.textContent = `Over ${dti}% target — cut price or grow down`; fEl.className='d down'; }
   document.getElementById('k-ctc').textContent = fmt$(down + closing);
   renderMaxPrice(inc, down, rate, hoa, dti);
@@ -273,7 +277,7 @@ function updateAll(){
   const rentEq = 2200; // Spartanburg 3-bed rent baseline
   const delta = piti - rentEq;
   const verdict = document.getElementById('afford-verdict');
-  const decision = (fdti*100 <= dti && piti > 0) ? 'take' : 'watch';
+  const decision = (fdti!==null && fdti*100 <= dti && piti > 0) ? 'take' : 'watch';
   verdict.innerHTML = `<b>Verdict:</b> <span class="chip ${decision}">${decision==='take'?'TAKE':'WATCH'}</span> at ${fmt$(price)} · rate ${(rate*100).toFixed(2)}%. PITI ${fmt$(piti)} vs. ~${fmt$(rentEq)} rent (${delta>=0?'+':''}${fmt$(delta)}/mo). Cash to close ${fmt$(down+closing)}. Sensitivity: a +1% rate move adds ~${fmt$(loan*0.01/12*7)}/mo on this loan.`;
 
   updateBE(); updateProperty(); updateRunway(); renderScorecard();
@@ -299,6 +303,14 @@ function pitiParts(price, down, rate, hoa){
   return { pi, tax, ins, piti: pi + tax + ins + hoa };
 }
 function solveMaxPrice(inc, down, rate, hoa, dtiPct){
+  // Matches _SOLVER_CEILING in analyzer/core/cost.py. The page's income slider reaches
+  // $10M, which clears any Spartanburg price long before DTI binds, so the bracket is a
+  // reachable answer rather than a theoretical guard -- and a bracket edge reported as a
+  // solved maximum would be the page inventing a number. Both sides say "ceiling reached".
+  const SOLVER_CEILING = 5000000;
+  // The engine refuses to solve a DTI ceiling against no income rather than dividing by it.
+  // Reachable here from the slider's left edge, so it gets its own answer.
+  if(!(inc > 0)) return { feasible:false, noIncome:true };
   const ceiling = (dtiPct/100) * (inc/12);
   // The floor is the payment at a price equal to the down payment, not at a price of zero.
   // The down payment is fixed, so any price below it is a house you are overpaying cash
@@ -310,7 +322,7 @@ function solveMaxPrice(inc, down, rate, hoa, dtiPct){
   // if the floor already breaks the ceiling, no price works and the honest answer is to say
   // so. Returning 0 would imply "buy something cheaper", which is not the fix.
   if(floor > ceiling) return { feasible:false, floor:floor, floorPrice:floorPrice };
-  let lo = floorPrice, hi = down + 5000000;
+  let lo = floorPrice, hi = Math.max(SOLVER_CEILING, floorPrice + 1);
   if(pitiParts(hi, down, rate, hoa).piti <= ceiling) return { feasible:true, price:hi, capped:true };
   // Bounded loop, not while(hi-lo>1). 60 halvings of a $5M bracket lands far inside a
   // dollar, and a bounded loop cannot hang the page on a pathological input.
@@ -540,6 +552,12 @@ function renderMaxPrice(inc, down, rate, hoa, dtiPct){
   const dEl = document.getElementById('k-maxp-d');
   const note = document.getElementById('maxp-note');
   const s = solveMaxPrice(inc, down, rate, hoa, dtiPct);
+  if(!s.feasible && s.noIncome){
+    el.textContent = '—';
+    dEl.textContent = 'No income entered';
+    note.innerHTML = `<b>No answer at $0 income.</b> A front-end DTI cap is a share of gross income, and there is no share of nothing — so this is undefined, not $0. The engine refuses the same input rather than dividing by it. Raise the household gross slider above zero.`;
+    return;
+  }
   if(!s.feasible){
     el.textContent = 'none';
     dEl.textContent = `Fixed costs alone are ${fmt$(s.floor)}/mo`;
@@ -557,6 +575,15 @@ function renderMaxPrice(inc, down, rate, hoa, dtiPct){
     // the answer rather than of the inputs. Mortgage insurance is modeled nowhere in this
     // project, which is exactly why the number above is an upper bound.
     pmi = ` A fixed ${fmt$(down)} down on ${fmt$(p)} is ${downPct.toFixed(1)}%, under 20% — mortgage insurance would apply at roughly 0.3–1.5% of the loan per year and is <b>not</b> included. Treat this as an upper bound.`;
+  }
+  if(s.capped){
+    // The bracket edge, not a root. Printing it as a maximum would claim the solver found
+    // a binding constraint when it never did -- and at this income none exists inside the
+    // bracket. analyzer/core/cost.py returns the same edge with the same warning attached.
+    el.textContent = `${fmt$(p)}+`;
+    dEl.textContent = `Search ceiling reached — not a solved maximum`;
+    note.innerHTML = `<b>DTI stops binding above ${fmt$(p)}.</b> At ${fmt$(inc)} gross, a ${dtiPct}% cap is ${fmt$((dtiPct/100)*(inc/12))}/mo, which still clears the payment at the solver's ${fmt$(p)} search ceiling — so this figure is where the search stops, not a limit the arithmetic found. The engine reports the same ceiling the same way. At this income the real constraints are cash to close, the appraisal, and what Spartanburg actually lists: the county's own parcel data tops out far below this number.`;
+    return;
   }
   const target = readNum('i-price');
   const headroom = p - target;
