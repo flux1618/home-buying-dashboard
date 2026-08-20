@@ -68,7 +68,14 @@ class PipelineRun:
 
 
 def build_stations(profile: BuyerProfile, api_keys: dict[str, str]) -> list[Station]:
-    """Station order is dependency order. Geocode is always first and always fatal."""
+    """Station order is dependency order. Geocode is always first and always fatal.
+
+    MarketVelocityStation deliberately is not in this line. Its committed aggregate snapshot is
+    reporting-only and has no property fact or score input; reading it for every address would
+    add local I/O and a stale-snapshot degradation to every property report. It remains available
+    through its explicit snapshot endpoint and station contract instead of becoming a hidden
+    per-property dependency.
+    """
     return [
         GeocodeStation(),
         ParcelStation(),

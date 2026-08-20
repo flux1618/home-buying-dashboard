@@ -121,13 +121,13 @@ That's a repeatable workflow for me, that is open to change, but has utility whe
 
 ## To Do
 1.  Actual pipeline with normalized data storage on repo
-2. Regenerating nightly data in data/parcels.parquet with Github actions. county REST service, return tax pin, assessed value, tax district, school attendance zone, and last sale
-3. rate sensitivity band that plot at the same houses with 5.0% to 7.5% with 30 year at 6.5% that includes  oscillation within a few base points weekly, defining the payment delta to inform buy or wait decision
+2. ~~Regenerating nightly data in data/parcels.parquet with Github actions. county REST service, return tax pin, assessed value, tax district, school attendance zone, and last sale~~ — built, see Phase 4 item 3. School attendance zone is the one part not delivered: it is not in the county's CAMA layer and nothing else there is documented as an attendance boundary, so it stays unknown.
+3. ~~rate sensitivity band that plot at the same houses with 5.0% to 7.5% with 30 year at 6.5% that includes  oscillation within a few base points weekly, defining the payment delta to inform buy or wait decision~~ — built, see Phase 4 item 2. The weekly oscillation is the `MORTGAGE30US` snapshot in item 4, so the band's baseline moves with the real series instead of a typed-in 6.5%.
 4. Watcher to push notifications
 5. Natural language evaluation to query on tool
-6. Market velocity
-7. open API for spartanburg area GIS, that includes parcels, assessed values, service districts, and voting/school boundaries
-8. FRED  MORTGAGE30US , the Freddie Mac 30-year average, weekly each Thursday, free API key
+6. ~~Market velocity~~ — built, see Phase 4 item 5.
+7. open API for spartanburg area GIS, that includes parcels, assessed values, service districts, and voting/school boundaries — partly done: parcels, assessed values, and tax districts come from the live county service now. Voting and school boundaries are still unfound.
+8. ~~FRED  MORTGAGE30US , the Freddie Mac 30-year average, weekly each Thursday, free API key~~ — built, see Phase 4 item 4. It turned out not to need the key.
 
 Built and removed from this list: the amortization schedule ([ADR 0012](docs/adr/0012-money-is-integer-cents-in-the-schedule.md)), the scenario solver ([ADR 0010](docs/adr/0010-inverse-affordability-is-two-answers.md)), and the SC 4% vs 6% assessment ratio with the school operating millage removed for legal residence.
 
@@ -171,17 +171,25 @@ Goal: Be able to put in house with variables for down payment, rate, insurance, 
 
 Max price is bisected over the real cost engine and returns two answers, a lender price and a household price ([ADR 0010](docs/adr/0010-inverse-affordability-is-two-answers.md)). The schedule counts in integer cents and closes on its term month ([ADR 0012](docs/adr/0012-money-is-integer-cents-in-the-schedule.md)); `--extra-monthly` shows what paying more buys. Principal and interest only — tax, insurance, HOA, and mortgage insurance do not amortize, and the output says so. The schedule is now on the page too, driven by the existing sliders, with a second implementation in `app.js` held to the Python row for row by a zero-tolerance parity test ([ADR 0013](docs/adr/0013-the-page-gets-its-own-schedule-under-a-parity-test.md)). The household max price is still CLI and API only.
 
-2. Graphical rate sensitivity band
+2. ~~Graphical rate sensitivity band~~ **Done.**
 
 Goal: Visualize 5.0% - 7.5% rates against the same house, and quantify a wait vs buy payment delta.
 
-3. Nightly `data/parcels.parquet` from Spartanburg County GIS Rest service - pull tax PIN, assessed value, tax district, school attendance zone, last sale.
+5.00% to 7.50% in quarter-point steps over the same house, through the real cost engine rather than a second payment formula: full PITI, principal and interest, lifetime interest, and both DTI max prices at every rate. The wait-vs-buy answer is the one worth having — it returns the price that would exactly cancel a rate move, because a lower rate on a higher price can be the worse deal. The baseline is labeled: the committed `MORTGAGE30US` snapshot when it is there, the profile assumption when it is not, and never a market rate typed in as if measured. On the page as an SVG band driven by the existing sliders, with the JS held to Python by a zero-tolerance parity test ([ADR 0015](docs/adr/0015-rate-sensitivity-is-scenarios-not-a-rate-forecast.md)). It is scenario arithmetic, not a rate forecast, and the output says so.
+
+3. ~~Nightly `data/parcels.parquet` from Spartanburg County GIS Rest service - pull tax PIN, assessed value, tax district, school attendance zone, last sale.~~ **Done, and it corrected an old excuse.**
 
 Goal: Have it automatically update and see how we can use tax code to our advantage.
 
-4. Weekly pulls of FRED `MORTGAGE30US` weekly pull (Thursdays).
+The county's own ArcGIS server at `maps.spartanburgcounty.org` answers now — 181,531 parcels against the 2021 mirror's 29,402. The repo had been saying it was unreachable, so the parcel station's primary path is `measured` again and the 2021 extract went back to being a labeled fallback. Nightly workflow, paged with backoff and resume, refusing on schema drift rather than writing a column it guessed at. **Scoped, not county-wide:** 35,171 residential records in a 384 KB Parquet, because committing a nightly county-wide binary would grow this repo forever ([ADR 0017](docs/adr/0017-authoritative-bounded-parcel-snapshot.md)). Field reality: `TAXPIN` does not exist on the live layer, `MAPNUMBER` does; assessed value is land plus building; **school attendance zone is not in there and is left out rather than modeled** — no verified boundary source, so no column.
 
-5. Market Velocity Metrics
+4. ~~Weekly pulls of FRED `MORTGAGE30US` weekly pull (Thursdays).~~ **Done.**
+
+A Thursday workflow commits a bounded five-year snapshot with the 52-week range, the four-week change, and where today sits in five years. It prefers the documented API when `FRED_API_KEY` is set and falls back to the keyless graph CSV, which is undocumented and therefore recorded as a real risk rather than a convenience ([ADR 0016](docs/adr/0016-keyless-fred-csv-fallback.md)). A late release is labeled stale instead of served as current.
+
+5. ~~Market Velocity Metrics~~ **Done.**
+
+Days on market, supply, inventory, new listings, price-cut share, and sale-to-list for Spartanburg County and 18 target ZIPs, with year-over-year comparisons and 3/6/12-month slopes. Month-over-month is deliberately not presented as a trend — housing is seasonal and that comparison lies. This needed a line ADR 0003 never drew: published aggregate market data is in, per-listing and MLS extraction stays out, and the source's non-commercial terms are honored in the repo ([ADR 0018](docs/adr/0018-published-aggregate-market-velocity-is-not-listing-extraction.md)). It is county- and ZIP-level context, which is not a street-level fact.
 
 6. Additional Features, but not necessary:
  - Natural-language query over dataset.
@@ -192,7 +200,7 @@ Goal: Have it automatically update and see how we can use tax code to our advant
 
 ### Permanent stretch goals (not planned)
 
-- Zillow / Redfin listing extraction — terms prohibit it.
+- Zillow / Redfin *listing* extraction — terms prohibit it. Note the distinction ADR 0018 now draws: Redfin's published aggregate market dataset is used for market velocity under its non-commercial terms with attribution. Individual listings are still off limits.
 - MLS integration — requires an agent relationship.
 
 

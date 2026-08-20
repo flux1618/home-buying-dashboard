@@ -512,3 +512,109 @@ number to watch when comparing them.
 ## Not financial advice
 
 A personal decision-support tool. Every value is real and cited, and none of it is investment advice. Verify against a specific TMS or address, with a licensed inspector, lender, and insurer, before committing capital.
+
+---
+
+## Mortgage baseline is weekly, public data — not a lender quote
+
+**The limitation.** `MORTGAGE30US` is FRED's weekly presentation of Freddie Mac's
+30-year fixed-rate PMMS average ([FRED series](https://fred.stlouisfed.org/series/MORTGAGE30US)).
+It is not a particular borrower's rate, APR, points, fees, credit profile, loan amount, or
+lock quote. It can be useful as a sensitivity baseline but cannot answer what a lender will
+offer for a specific house.
+
+**How it is handled.** The committed
+[`data/mortgage30us.json`](../data/mortgage30us.json) stamps the observation date, retrieval
+time, source path, bounded history, and derived context. A reading more than ten days old
+is marked `stale` and its provenance note says `STALE`; consumers must not display it as a
+current Thursday release.
+
+**Source-contract cost.** FRED's documented
+[observations API](https://fred.stlouisfed.org/docs/api/fred/series_observations.html)
+requires an API key. The unattended default uses the working keyless
+[graph CSV](https://fred.stlouisfed.org/graph/fredgraph.csv?id=MORTGAGE30US), which is not
+the documented API and can change or disappear without an API compatibility promise. With
+`FRED_API_KEY`, the collector prefers the documented API and falls back to CSV. If neither
+answers, it fails rather than fabricating a rate; see [ADR 0016](adr/0016-keyless-fred-csv-fallback.md).
+
+---
+
+## Rate sensitivity is arithmetic on assumptions, not a buy-or-wait forecast
+
+**The limitation.** The 5.00%–7.50% band holds the same house price, down payment, term,
+HOA, modeled taxes, and statewide-average insurance fixed, then varies only the stated
+mortgage rate. It cannot predict a future mortgage rate, a future listing price, a lender's
+quote, appraisal, seller concession, refinancing decision, or when the buyer will sell.
+The optional baseline snapshot is FRED's weekly presentation of Freddie Mac's 30-year
+fixed-rate PMMS average ([FRED MORTGAGE30US](https://fred.stlouisfed.org/series/MORTGAGE30US));
+it is not a borrower-specific APR, points, fees, credit profile, or lock.
+
+**Why it matters.** A lower rate with a higher house price can raise full PITI. The displayed
+break-even future price is merely the price that gives the same modeled PITI under the
+supplied later rate. It is not a prediction that a house will sell there. Lifetime-interest
+deltas assume the buyer makes the scheduled payments through the whole term; selling,
+prepaying, or refinancing changes that result.
+
+**How it is handled.** Output labels these figures as scenario arithmetic and names the
+baseline source. The CLI reads `data/mortgage30us.json` only when it exists and is valid;
+otherwise it uses the profile rate and labels it as a configured assumption. Mortgage
+insurance, closing costs, and rate-lock/points fees remain unmodeled, so a specific offer
+still needs a lender quote and an insurer quote.
+
+---
+
+## Parcel data now uses the reachable county CAMA service, but the committed index is deliberately narrow
+
+**Correction to the earlier limitation.** On 2026-08-19 the authoritative Spartanburg County
+ArcGIS CAMA service at [CAMA_Parcels FeatureServer](https://maps.spartanburgcounty.org/server/rest/services/GIS/CAMA_Parcels/FeatureServer/0?f=pjson)
+answered from the build environment (ArcGIS 11.5; 181,531 parcels; paginated queries
+supported). It is now the primary source and its values are `measured`. The February 2021
+ArcGIS Online extract remains only a labelled `estimated` fallback if the county source is
+down; it is neither current nor full-county.
+
+**The remaining limitation.** `data/parcels.parquet` is not a county-wide parcel archive. It
+contains county records with `City = 'SPARTANBURG'` and residential `LandUse`, matching the
+configured Spartanburg household and hospital commute anchor. A viable home in another
+municipality can be absent even if it is within 20 minutes. The artifact is a bounded
+candidate index; individual live analysis still queries the county station.
+
+**School attendance zone is unknown.** The current CAMA layer has no school-attendance field,
+and the county GIS catalog did not expose a public attendance-zone layer on the verification
+date. The snapshot therefore omits the column rather than assigning a district or nearby
+school by inference. Confirm attendance with the relevant school district before treating it
+as a buying criterion.
+
+**What the snapshot's names mean.** The live layer has no legacy `TAXPIN` field. Its
+`MAPNUMBER` is carried as `tax_pin`; `assessed_value` is the sum of the current assessed land
+and building fields; `last_sale_date` and `last_sale_amount` are the county's recorded sale
+fields. The sidecar at `data/parcels.meta.json` names every source field and the retrieval
+time. Sale data can be blank, nominal, or delayed; it is a recorded assessor field, not a
+verified arm's-length comparable sale.
+
+---
+
+## Market velocity is a delayed aggregate, not a street-level signal
+
+The market-velocity snapshot uses published [Redfin Data Center Market Tracker](https://www.redfin.com/news/data-center/)
+aggregates for Spartanburg County and configured ZIPs. The source's latest period can lag the
+current calendar date, and ZIP rows are trailing 90-day observations. A number labeled “this
+month” therefore describes the source period shown in the report, not today’s showing traffic or
+the seller’s negotiating position.
+
+**A county- or ZIP-level figure is not a street-level figure.** A ZIP can contain a new-build
+subdivision with abundant inventory and an older neighborhood with none. Median days on market,
+inventory, price-cut share, and sale-to-list ratio cannot identify the condition, pricing, or
+leverage of one house. They are context for whether to broaden, narrow, or pace a search — never
+an offer-price formula.
+
+**Seasonality is handled, not removed.** The snapshot treats same-calendar-month
+year-over-year change as the decision comparison. It retains 3-, 6-, and 12-month slopes as
+descriptive context, but the short slopes still contain seasonal effects; it never calls a
+one-month movement a trend. Missing ZIP metrics remain unknown rather than being substituted
+from a nearby ZIP or calculated from an incompatible series.
+
+**Metro is a disclosed county-equivalent scope.** The public Redfin metro archive was not
+available at the tested path, so the `Spartanburg, SC` snapshot row repeats the published
+Spartanburg County aggregate under the [documented CBSA mapping](https://www2.census.gov/programs-surveys/popest/datasets/2020-2022/metro/totals/cbsa-est2022.csv).
+It is not an independently measured Redfin metro statistic; recheck the geography if OMB
+delineations or the source file change. See [ADR 0018](adr/0018-published-aggregate-market-velocity-is-not-listing-extraction.md).

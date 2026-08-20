@@ -19,6 +19,15 @@ loan_term_months     = 360
 annual_insurance     = 3102     # SC statewide average — replace with a real quote
 target_price         = 315000
 
+[market_velocity]
+# Explicit scope for the bounded Redfin aggregate snapshot. These are market-context rows, not
+# listing feeds or a geography inferred from an address; see docs/adr/0018.
+target_zips = [
+  "29301", "29302", "29303", "29306", "29307", "29316", "29323", "29334",
+  "29346", "29349", "29365", "29369", "29372", "29376", "29385", "29388",
+  "29650", "29651",
+]
+
 [tax]
 # One of: "spartanburg_1", "typical". Falls back to "typical" when unset or unknown.
 millage_district = "typical"

@@ -310,6 +310,21 @@ jobs:
         # to have one implementation and generate the other.
         run: python tools/build_snapshot.py --check
 
+      - name: Verify committed mortgage-rate snapshot
+        # No FRED request: catches a missing, malformed, drifted-derived, or stale weekly
+        # artifact before the rate-sensitivity door can present it as a current baseline.
+        run: python tools/build_rates_snapshot.py --check
+
+      - name: Verify committed parcel snapshot
+        # The offline check validates the bounded artifact's sidecar and freshness without
+        # importing pyarrow; Arrow remains an optional dependency of the writer, not CI's core.
+        run: python tools/build_parcels_snapshot.py --check
+
+      - name: Verify committed market-velocity snapshot
+        # No Redfin download: catches a stale or profile-scope-drifted aggregate artifact before
+        # it reaches the explicit market-context endpoint.
+        run: python tools/build_velocity_snapshot.py --check
+
       - name: The page reads the compiled rules rather than restating them
         run: pytest tests/test_snapshot_rules.py -v
 

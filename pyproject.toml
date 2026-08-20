@@ -19,6 +19,8 @@ api = [
     "python-multipart>=0.0.9",   # required for the CSV upload on /shortlist
 ]
 dev = ["pytest>=8.0", "httpx>=0.27"]   # httpx backs fastapi's TestClient
+# Only the bounded-Parquet snapshot writer needs Arrow; the analyzer and its runtime stay stdlib-only.
+parcels = ["pyarrow>=25.0"]
 
 [tool.setuptools.packages.find]
 # `ledger*` is here for a reason worth remembering: CI installs the project and then runs

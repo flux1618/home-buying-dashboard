@@ -27,6 +27,7 @@ container Bao points at locally, not a hosted multi-user app.
 from __future__ import annotations
 
 import io
+import json
 import pathlib
 import tempfile
 import time
@@ -35,7 +36,7 @@ from typing import Annotated, Any, Literal
 
 from fastapi import Body, FastAPI, HTTPException, Query, Request, UploadFile
 from fastapi.responses import JSONResponse, PlainTextResponse
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from analyzer import batch
 from analyzer.core.profile import BuyerProfile, load_profile
@@ -146,6 +147,46 @@ class AmortizationRequest(BaseModel):
         if v is not None and info.data.get("price") is not None:
             raise ValueError("send price or loan_amount, not both")
         return v
+
+
+class SensitivityRequest(BaseModel):
+    """Stated same-house rate scenarios, with the HTTP percent/dollar convention.
+
+    This accepts assumptions only. A rate band is useful because it keeps the house and household
+    inputs fixed while showing their consequences; it cannot say where rates or home prices go.
+    """
+
+    model_config = {"extra": "forbid"}
+
+    price: float = Field(gt=0, le=100_000_000)
+    rate_start_pct: float = Field(default=5.0, ge=0, le=100)
+    rate_end_pct: float = Field(default=7.5, ge=0, le=100)
+    rate_step_pct: float = Field(default=0.25, gt=0, le=100)
+    baseline_rate_pct: float | None = Field(default=None, ge=0, le=100)
+    baseline_source: str | None = Field(default=None, max_length=500)
+    dti_pct: float | None = Field(default=None, gt=0, le=100)
+    sqft: float | None = Field(default=None, gt=0, le=50_000)
+    year_built: int | None = Field(default=None, ge=1700, le=2100)
+    hoa_monthly: float = Field(default=0.0, ge=0, le=10_000)
+    owner_occupied: bool = True
+    future_rate_pct: float | None = Field(default=None, ge=0, le=100)
+    future_price: float | None = Field(default=None, gt=0, le=100_000_000)
+
+    @field_validator("baseline_source")
+    @classmethod
+    def strip_baseline_source(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        cleaned = value.strip()
+        if not cleaned:
+            raise ValueError("baseline_source cannot be blank")
+        return cleaned
+
+    @model_validator(mode="after")
+    def future_scenario_is_complete(self) -> "SensitivityRequest":
+        if (self.future_rate_pct is None) != (self.future_price is None):
+            raise ValueError("future_rate_pct and future_price must be supplied together")
+        return self
 
 
 class StatusRequest(BaseModel):
@@ -293,6 +334,33 @@ def create_app() -> FastAPI:
             "known_limitations": "see docs/KNOWN_LIMITATIONS.md",
         }
 
+    @app.get("/rates/mortgage30us", tags=["market"])
+    def mortgage30us_rate_snapshot() -> dict[str, Any]:
+        """Committed weekly FRED MORTGAGE30US baseline; not a live lender quote."""
+        path = pathlib.Path(__file__).resolve().parents[1] / "data" / "mortgage30us.json"
+        try:
+            snapshot = json.loads(path.read_text())
+        except FileNotFoundError as exc:
+            raise HTTPException(status_code=503, detail="mortgage-rate snapshot is not available") from exc
+        except (OSError, json.JSONDecodeError) as exc:
+            raise HTTPException(status_code=503, detail="mortgage-rate snapshot is invalid") from exc
+        if not isinstance(snapshot, dict):
+            raise HTTPException(status_code=503, detail="mortgage-rate snapshot is invalid")
+        return snapshot
+
+    @app.get("/market-velocity", tags=["market"])
+    def market_velocity() -> dict[str, Any]:
+        """Committed aggregate market context; never a live listing or MLS lookup."""
+        from analyzer.sources.velocity import read_snapshot
+
+        try:
+            return read_snapshot()
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=503,
+                detail={"error": "market_velocity_unavailable", "reason": str(exc)},
+            ) from exc
+
     # -- analysis -------------------------------------------------------------
 
     @app.post("/analyze", response_model=AnalysisResponse, tags=["analysis"])
@@ -416,6 +484,66 @@ def create_app() -> FastAPI:
                 "pay extra principal, so this is a smaller number than PITI from /analyze."
             ),
         }
+
+    @app.post("/sensitivity", tags=["analysis"])
+    def sensitivity(payload: Annotated[SensitivityRequest, Body()]) -> dict[str, Any]:
+        """Apply supplied rate/price scenarios without fetching or forecasting anything."""
+        from analyzer.core.sensitivity import BaselineRate, rate_band, wait_vs_buy
+        from analyzer.sensitivity_cli import baseline_from_snapshot
+
+        p = profile()
+        if payload.baseline_rate_pct is None:
+            try:
+                # This adapter reads only the committed artifact. If it is absent, it returns the
+                # profile's explicitly configured assumption rather than inventing a market rate.
+                baseline = baseline_from_snapshot(p)
+            except ValueError as exc:
+                raise HTTPException(
+                    status_code=503,
+                    detail=f"mortgage-rate snapshot is invalid: {exc}",
+                ) from exc
+        else:
+            source = "explicit HTTP baseline assumption (not a market observation)"
+            if payload.baseline_source:
+                source += f"; caller label: {payload.baseline_source}"
+            baseline = BaselineRate(payload.baseline_rate_pct / 100.0, source)
+
+        try:
+            band = rate_band(
+                p,
+                payload.price,
+                baseline=baseline,
+                start_rate=payload.rate_start_pct / 100.0,
+                end_rate=payload.rate_end_pct / 100.0,
+                step=payload.rate_step_pct / 100.0,
+                dti_ceiling=None if payload.dti_pct is None else payload.dti_pct / 100.0,
+                sqft=payload.sqft,
+                year_built=payload.year_built,
+                hoa_monthly=payload.hoa_monthly,
+                current_year=datetime.now().year,
+                owner_occupied=payload.owner_occupied,
+            ).to_dict()
+            comparison = (
+                None
+                if payload.future_rate_pct is None
+                else wait_vs_buy(
+                    p,
+                    baseline_rate=baseline.annual_rate,
+                    baseline_price=payload.price,
+                    future_rate=payload.future_rate_pct / 100.0,
+                    future_price=payload.future_price,
+                    sqft=payload.sqft,
+                    year_built=payload.year_built,
+                    hoa_monthly=payload.hoa_monthly,
+                    current_year=datetime.now().year,
+                    owner_occupied=payload.owner_occupied,
+                ).to_dict()
+            )
+        except ValueError as exc:
+            # The core's messages name a non-dividing rate grid or infeasible scenario more
+            # precisely than an HTTP-layer rewording could, and these are caller assumptions.
+            raise HTTPException(status_code=422, detail=str(exc)) from None
+        return {"band": band, "wait_vs_buy": comparison}
 
     @app.post("/shortlist", tags=["analysis"])
     def analyze_shortlist(

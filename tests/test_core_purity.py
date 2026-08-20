@@ -98,6 +98,9 @@ REPORTING_ONLY_FACTS = {
     # a defensible points penalty, and pricing hazard exposure is what an insurance quote
     # is for. See docs/adr/0009-hazard-risk-is-a-caveat.md.
     "hazard_profile",
+    # Bounded Redfin aggregate context; it is neither property- nor street-level and does not
+    # score. It is intentionally exposed explicitly rather than read on every property analysis.
+    "market_velocity",
 }
 
 

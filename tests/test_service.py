@@ -121,6 +121,58 @@ class TestOps:
 
 
 # =============================================================================
+# Committed market artifacts
+# =============================================================================
+
+
+class TestCommittedMarketArtifacts:
+    def test_mortgage_rate_returns_the_committed_baseline(self, client):
+        body = client.get("/rates/mortgage30us").json()
+        assert body["series_id"] == "MORTGAGE30US"
+        assert isinstance(body["latest_rate_pct"], (int, float))
+        assert client.calls == []
+
+    def test_missing_mortgage_rate_snapshot_is_a_clear_503(self, client, monkeypatch):
+        from service import app as service_module
+
+        def missing(_path):
+            raise FileNotFoundError("fixture removed")
+
+        monkeypatch.setattr(service_module.pathlib.Path, "read_text", missing)
+        response = client.get("/rates/mortgage30us")
+        assert response.status_code == 503
+        assert response.json()["detail"] == "mortgage-rate snapshot is not available"
+
+    def test_malformed_mortgage_rate_snapshot_is_a_clear_503(self, client, monkeypatch):
+        from service import app as service_module
+
+        monkeypatch.setattr(service_module.pathlib.Path, "read_text", lambda _path: "{")
+        response = client.get("/rates/mortgage30us")
+        assert response.status_code == 503
+        assert response.json()["detail"] == "mortgage-rate snapshot is invalid"
+
+    def test_market_velocity_returns_the_committed_aggregate_context(self, client):
+        body = client.get("/market-velocity").json()
+        assert body["source_name"] == "Redfin Data Center Market Tracker"
+        assert "county" in body["markets"]
+        assert client.calls == []
+
+    def test_unavailable_market_velocity_snapshot_is_a_clear_503(self, client, monkeypatch):
+        from analyzer.sources import velocity
+
+        def unavailable():
+            raise ValueError("fixture snapshot is malformed")
+
+        monkeypatch.setattr(velocity, "read_snapshot", unavailable)
+        response = client.get("/market-velocity")
+        assert response.status_code == 503
+        assert response.json()["detail"] == {
+            "error": "market_velocity_unavailable",
+            "reason": "fixture snapshot is malformed",
+        }
+
+
+# =============================================================================
 # POST /analyze
 # =============================================================================
 
@@ -211,6 +263,65 @@ class TestAnalyze:
         response = client_.post("/analyze", json={"address": "asdfgh", "price": 268000})
         assert response.status_code == 422
         assert response.json()["error"] == "could_not_locate_address"
+
+
+# =============================================================================
+# POST /sensitivity
+# =============================================================================
+
+
+class TestSensitivity:
+    def test_explicit_scenario_returns_the_engine_note_without_reading_a_snapshot(self, client):
+        response = client.post(
+            "/sensitivity",
+            json={
+                "price": 310000,
+                "rate_start_pct": 5.0,
+                "rate_end_pct": 5.5,
+                "rate_step_pct": 0.25,
+                "baseline_rate_pct": 6.25,
+                "baseline_source": "buyer-provided comparison assumption",
+            },
+        )
+        assert response.status_code == 200
+        body = response.json()
+        assert body["wait_vs_buy"] is None
+        assert len(body["band"]["points"]) == 3
+        assert "Scenario arithmetic only" in body["band"]["note"]
+        assert "not a market observation" in body["band"]["baseline"]["source"]
+        assert client.calls == []
+
+    def test_wait_scenario_requires_both_rate_and_price(self, client):
+        response = client.post(
+            "/sensitivity",
+            json={"price": 310000, "future_rate_pct": 6.25},
+        )
+        assert response.status_code == 422
+        assert "future_rate_pct and future_price" in str(response.json())
+
+    def test_invalid_rate_grid_is_rejected_as_a_caller_error(self, client):
+        response = client.post(
+            "/sensitivity",
+            json={
+                "price": 310000,
+                "rate_start_pct": 7.5,
+                "rate_end_pct": 5.0,
+                "baseline_rate_pct": 6.25,
+            },
+        )
+        assert response.status_code == 422
+        assert "start_rate must be at or below end_rate" in response.json()["detail"]
+
+    def test_malformed_baseline_snapshot_is_a_clear_503(self, client, monkeypatch):
+        from analyzer import sensitivity_cli
+
+        def malformed(_profile):
+            raise ValueError("could not read mortgage snapshot: invalid JSON")
+
+        monkeypatch.setattr(sensitivity_cli, "baseline_from_snapshot", malformed)
+        response = client.post("/sensitivity", json={"price": 310000})
+        assert response.status_code == 503
+        assert "mortgage-rate snapshot is invalid" in response.json()["detail"]
 
 
 # =============================================================================
