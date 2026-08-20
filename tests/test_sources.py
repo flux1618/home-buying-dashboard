@@ -492,3 +492,43 @@ class TestBroadband:
         result = BroadbandStation(api_key="stale-key").run(located)
         assert "declined" in result.degradation.reason
         assert result.facts == {}
+
+class TestCurrentCountyParcelStation:
+    """The live service has a different schema from the retained 2021 mirror."""
+
+    def test_current_county_fields_are_used_and_wrapped_as_measurements(self, fake_http, located):
+        fake_http.route(
+            "maps.spartanburgcounty.org",
+            {
+                "features": [
+                    {
+                        "attributes": {
+                            "MAPNUMBER": "7-10-00-001.00",
+                            "PropertyLocation": "606 ANDRE CT SPARTANBURG",
+                            "District": "5800",
+                            "YearBuilt": 2004,
+                            "LivingArea": 1800,
+                            "FullBaths": 2,
+                            "HalfBaths": 1,
+                            "BedRooms": 4,
+                            "Garage": "GARAGE ATT",
+                            "Utility1": "ALL PUBLIC",
+                            "PropertyType": "4OOR",
+                            "Acreage": 0.33,
+                        }
+                    }
+                ]
+            },
+        )
+
+        result = ParcelStation().run(located)
+
+        assert result.facts["year_built"] == 2004
+        assert result.values["parcel_id"].value == "7-10-00-001.00"
+        assert result.values["year_built"].confidence == "measured"
+        assert result.values["situs_address"].confidence == "measured"
+        assert not fake_http.called_with("services9.arcgis.com")
+        # This catches the dangerous failure mode: asking the primary for only stale
+        # mirror names makes ArcGIS reject the entire request and silently selects 2021.
+        assert "MAPNUMBER" in fake_http.calls[0]
+        assert "PropertyType" in fake_http.calls[0]

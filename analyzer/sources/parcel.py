@@ -1,34 +1,30 @@
 """Station A — assessor and CAMA record: the physical facts about the house.
 
-This station is the honest centrepiece of the whole project, because it is where the
-data is worst and the temptation to paper over that is strongest.
+The authoritative Spartanburg County ArcGIS CAMA service at
+``maps.spartanburgcounty.org`` is reachable from the build environment as of 2026-08-19.
+The live FeatureServer is therefore the primary source, and values it returns are
+``measured``: it is the county's current assessor layer, not a historical export.
 
-**What happened when this was built.** Spartanburg County runs its own ArcGIS server at
-`maps.spartanburgcounty.org`. It did not respond from the build environment — not a 404,
-just silence until timeout. What *is* reachable is a county extract published to ArcGIS
-Online, dated February 2021, containing roughly 29,400 parcels rather than the county's
-full set.
+The server schema is not the February 2021 ArcGIS Online mirror schema.  The live layer
+uses ``MAPNUMBER``, ``StreetAddress`` / ``PropertyLocation``, and ``PropertyType`` where
+the mirror uses ``TAXPIN``, ``PropertyLo``, and ``PropertyTy``.  The query keeps separate
+field lists rather than asking the live server for stale names: ArcGIS rejects a whole
+query when one outField does not exist, turning a harmless rename into an empty report.
 
-That is a genuinely bad source. It is also the source that exists. The response is not to
-pretend otherwise:
+The 2021 mirror remains a labelled fallback only.  It is partial (about 29,400 records
+against 181,531 in the current county service) and stale, so every value from it remains
+``estimated`` and carries the vintage plus a blocking county-record verification task.
 
-  - The authoritative county server is tried first, every time.
-  - The 2021 mirror is a labelled fallback, never the primary.
-  - Every value from the mirror is `estimated`, never `measured`, with the vintage in
-    the note — because a five-year-old snapshot of a *current* field is an estimate, no
-    matter how precisely it is stored.
-  - A blocking verification task names the county's own record as the thing to check.
+**What is deliberately NOT inferred.** The ``Garage`` field records type — ``GARAGE ATT``,
+``CARPORT DET`` — and never a bay count. Turning ``GARAGE ATT`` into ``2 spaces`` would
+produce a number that scores, deducts, and looks measured, from a field that does not
+contain it. So ``garage_spaces`` stays unknown and a task asks for the count. Unknown that
+says so beats a plausible fabrication.
 
-**What is deliberately NOT inferred.** The `Garage` field records type — `GARAGE ATT`,
-`CARPORT DET` — and never a bay count. Turning "GARAGE ATT" into "2 spaces" would produce
-a number that scores, deducts, and looks measured, from a field that does not contain it.
-So `garage_spaces` stays unknown and a task asks for the count. Unknown that says so beats
-a plausible fabrication.
-
-**A useful accident.** The `PropertyTy` code starts with 4 for owner-occupied legal
-residence and 6 for everything else, which is the assessment ratio itself. That confirms
-the current owner's ratio directly — and therefore whether the tax figure on the listing
-is about to change under a new owner.
+**A useful accident.** The ``PropertyType`` / ``PropertyTy`` code starts with 4 for
+owner-occupied legal residence and 6 for everything else, which is the assessment ratio
+itself. That confirms the current owner's ratio directly — and therefore whether the tax
+figure on the listing is about to change under a new owner.
 """
 
 from __future__ import annotations
@@ -39,7 +35,7 @@ from ..core.provenance import derived, estimated, measured
 from . import http
 from .base import Context, Station, StationResult
 
-# Authoritative, and unreachable from some networks. Tried first regardless.
+# Authoritative county service. Current values from it are measured.
 COUNTY_PRIMARY = (
     "https://maps.spartanburgcounty.org/server/rest/services/GIS/CAMA_Parcels/FeatureServer/0/query"
 )
@@ -55,7 +51,17 @@ MIRROR_DOC = (
 )
 MIRROR_VINTAGE = "February 2021 county extract, approx. 29,400 parcels — not the full county"
 
-FIELDS = ",".join([
+# The county layer and 2021 mirror have different, verified schemas. ArcGIS fails an
+# entire request for one absent outField, so sharing the old mirror list would make a
+# reachable primary look unavailable.
+COUNTY_FIELDS = ",".join([
+    "MAPNUMBER", "District", "StreetAddress", "PropertyLocation", "City", "Zip",
+    "YearBuilt", "LivingArea", "TotalArea", "FullBaths", "HalfBaths", "BedRooms",
+    "Garage", "Utility1", "Utility2", "Utility3", "PropertyType", "Acreage",
+    "SaleDate", "SaleAmount", "CurrentAssessedLandValue",
+    "CurrentAssessedBuildingValue", "OwnerName", "RoofCover", "HeatType",
+])
+MIRROR_FIELDS = ",".join([
     "TAXPIN", "District", "PropertyLo", "City", "Zip", "YearBuilt", "LivingArea",
     "TotalArea", "FullBaths", "HalfBaths", "BedRooms", "Garage", "Utility1",
     "Utility2", "Utility3", "PropertyTy", "Acreage", "SaleDate", "SaleAmount",
@@ -155,11 +161,14 @@ def pick_parcel(candidates: list[dict[str, Any]], address: str) -> dict[str, Any
     wanted = street_number(address)
     if wanted:
         for candidate in candidates:
-            if street_number(clean(candidate.get("PropertyLo"))) == wanted:
+            if street_number(clean(candidate.get("PropertyLocation") or candidate.get("StreetAddress") or candidate.get("PropertyLo"))) == wanted:
                 return candidate
 
     chosen = dict(candidates[0])
-    chosen["_ambiguous"] = [clean(c.get("PropertyLo")) for c in candidates]
+    chosen["_ambiguous"] = [
+        clean(c.get("PropertyLocation") or c.get("StreetAddress") or c.get("PropertyLo"))
+        for c in candidates
+    ]
     return chosen
 
 
@@ -201,7 +210,7 @@ class ParcelStation(Station):
                 "spatialRel": "esriSpatialRelIntersects",
                 "distance": SEARCH_RADIUS_M,
                 "units": "esriSRUnit_Meter",
-                "outFields": FIELDS,
+                "outFields": COUNTY_FIELDS if endpoint == COUNTY_PRIMARY else MIRROR_FIELDS,
                 "returnGeometry": "false",
                 "f": "json",
             },
@@ -234,14 +243,14 @@ class ParcelStation(Station):
         baths = read_baths(attrs)
         year_built = positive_int(attrs.get("YearBuilt"))
         water_sewer, utility_summary = read_utilities(attrs)
-        ratio, ratio_note = assessment_ratio(clean(attrs.get("PropertyTy")))
+        ratio, ratio_note = assessment_ratio(clean(attrs.get("PropertyType") or attrs.get("PropertyTy")))
         garage_type = clean(attrs.get("Garage"))
         district = clean(attrs.get("District"))
 
         values: dict[str, Any] = {}
         for key, value in (
-            ("parcel_id", clean(attrs.get("TAXPIN"))),
-            ("situs_address", clean(attrs.get("PropertyLo"))),
+            ("parcel_id", clean(attrs.get("MAPNUMBER") or attrs.get("TAXPIN"))),
+            ("situs_address", clean(attrs.get("PropertyLocation") or attrs.get("StreetAddress") or attrs.get("PropertyLo"))),
             ("tax_district", district),
             ("year_built", year_built),
             ("living_sqft", sqft),

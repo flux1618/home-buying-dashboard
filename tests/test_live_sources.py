@@ -73,15 +73,17 @@ class ParcelProbe(parcel.ParcelStation):
     """Exists only so the live test can query the mirror directly, skipping the county."""
 
 
-def test_the_authoritative_county_server_is_still_unreachable():
-    """Documents a known limitation, and tells us the day it is fixed.
-
-    The county's ArcGIS host serves an incomplete certificate chain. If this test starts
-    failing, that is good news: drop the stale-mirror fallback note from the docs.
-    """
+def test_the_authoritative_county_server_still_returns_current_schema():
+    """A changed live field name would otherwise send every report to the 2021 fallback."""
     ctx = Context(address=ADDRESS, price=1.0, lat=34.943051, lon=-81.97665)
-    with pytest.raises((http.SourceUnavailable, http.SourceRejected, LookupError)):
-        parcel.ParcelStation()._query(parcel.COUNTY_PRIMARY, ctx)
+    try:
+        attrs = parcel.ParcelStation()._query(parcel.COUNTY_PRIMARY, ctx)
+    except (http.SourceUnavailable, http.SourceRejected, LookupError) as exc:
+        pytest.skip(f"authoritative county GIS unavailable: {exc}")
+
+    for field in ("MAPNUMBER", "PropertyType", "PropertyLocation", "District", "YearBuilt"):
+        assert field in attrs, f"the current county layer stopped returning {field}"
+    assert attrs["PropertyType"][0] in "46", "assessment-ratio code shape changed"
 
 
 def test_a_full_run_produces_a_scored_report(located):
