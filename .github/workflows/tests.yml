@@ -158,6 +158,69 @@ jobs:
             exit 1
           fi
 
+      - name: The extractor runs offline and refuses what ADR 0004 forbids
+        # The unit tests cover the refusal rules. This covers the thing they cannot: that the
+        # CLI entry point still starts, that the sample fixture ships in an installed package,
+        # and above all that a run with no HBA_LLM_API_KEY and no reachable model still works.
+        # If this step ever needs a credential, the offline default has been broken.
+        run: |
+          set -euo pipefail
+          export HBA_DATA_DIR=/tmp/exci
+          python -m analyzer.extract.cli read analyzer/fixtures/sample_inspection.txt \
+            --name "Bao Nguyen" --json > /tmp/extract.json
+          python - <<'PY'
+          import json, pathlib
+
+          out = json.loads(pathlib.Path("/tmp/extract.json").read_text())
+
+          # Redaction is the one control that must not be quietly bypassable, so assert it
+          # fired rather than trusting that it did.
+          assert out["redaction"]["fired"] is True, out["redaction"]
+          assert out["redaction"]["counts"].get("known_name") == 1, out["redaction"]
+
+          # Nothing may arrive pre-confirmed. A confirmed field is one a person accepted, and
+          # no code path is allowed to manufacture that.
+          assert out["accepted"] >= 8, out["accepted"]
+          assert all(f["confirmed"] is False for f in out["findings"]), "a field arrived confirmed"
+          assert all(f["confidence"] == "extracted" for f in out["findings"]), "wrong confidence"
+
+          # Neither the payload nor the log may carry a redacted value.
+          body = json.dumps(out)
+          for leaked in ("Nguyen", "james@ortegainspect.com", "555-0134"):
+              assert leaked not in body, f"{leaked} survived into the response"
+
+          log = pathlib.Path("/tmp/exci/llm_calls.jsonl").read_text()
+          assert log.strip(), "no call was logged"
+          for leaked in ("vapor barrier", "architectural", "Nguyen"):
+              assert leaked not in log, f"the log stored {leaked!r}"
+          PY
+
+      - name: A forbidden field is refused end to end, not just in a unit test
+        # Drives the parser with a response a real model plausibly returns: a confident dollar
+        # figure, and a plausible number whose quote is not in the document. Both must be
+        # refused by the installed package, on the real fixture, outside pytest.
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from analyzer.core.extraction import parse_findings
+
+          text = "Roof covering: architectural asphalt shingle. Year built: 1998."
+          result = parse_findings(
+              [
+                  {"field": "monthly_payment", "value": 1477, "quote": "Year built: 1998."},
+                  {"field": "roof_age_years", "value": 12, "quote": "The roof was replaced in 2014."},
+              ],
+              sent_text=text,
+              document="ci-check",
+              document_sha256="0" * 64,
+              provider="ci",
+          )
+          assert not result.findings, result.findings
+          reasons = {r.field_name: r.reason for r in result.rejections}
+          assert "forbidden" in reasons["monthly_payment"], reasons
+          assert "citation" in reasons["roof_age_years"], reasons
+          PY
+
       - name: The amortization schedule closes on an installed package
         # Arithmetic invariants, checked against the *installed* package with no working
         # directory on sys.path. The unit tests assert the same things, but they run with the

@@ -27,6 +27,8 @@ container Bao points at locally, not a hosted multi-user app.
 from __future__ import annotations
 
 import io
+import pathlib
+import tempfile
 import time
 from datetime import datetime
 from typing import Annotated, Any, Literal
@@ -42,6 +44,10 @@ from ledger.repo import JOURNAL_KINDS, STATUSES, LedgerError, PropertyNotFound
 from analyzer.core.amortization import schedule as build_schedule
 from analyzer.core.analyze import ENGINE_VERSION
 from analyzer.core.cost import solve_max_price
+from analyzer.extract import extract_from_document
+from analyzer.extract.calllog import read_records, summarize
+from analyzer.extract.documents import DocumentError
+from analyzer.extract.providers import ProviderError, build_provider
 from analyzer.pipeline import PipelineAborted, run
 
 # The profile is read once at startup rather than per request. It is a config file, not
@@ -672,6 +678,121 @@ def create_app() -> FastAPI:
         finally:
             conn.close()
         return {"count": len(entries), "open": entries}
+
+    # -- extraction -----------------------------------------------------------
+
+    @app.get("/extract/schema", tags=["extraction"])
+    def extract_schema() -> dict[str, Any]:
+        """The declared schema, and the fields that are refused on principle.
+
+        Both halves are published deliberately. A caller can see what extraction will attempt,
+        and can also see the list of things it will never return no matter how it is asked --
+        which is a more useful description of a boundary than prose about one.
+        """
+        from analyzer.core.extraction import FIELDS, FORBIDDEN_FIELDS, schema_for_prompt
+
+        return {
+            "fields": schema_for_prompt(),
+            "count": len(FIELDS),
+            "forbidden": [
+                {"field": name, "because": reason} for name, reason in sorted(FORBIDDEN_FIELDS.items())
+            ],
+            "rule": "the model reads, the code decides — docs/adr/0004-llm-scope-boundary.md",
+            "confirmation": (
+                "Every returned field is confidence=extracted and confirmed=false. A human must "
+                "confirm a field before it can affect a score."
+            ),
+        }
+
+    @app.post("/extract", tags=["extraction"])
+    def extract_document(
+        file: UploadFile,
+        provider: Annotated[
+            str,
+            Query(description="offline (default, deterministic, no key), ollama, or openai."),
+        ] = "offline",
+        name: Annotated[
+            list[str] | None,
+            Query(description="Personal names to redact before sending. Repeatable."),
+        ] = None,
+        all_pages: Annotated[
+            bool,
+            Query(description="Send every page, not only those mentioning a schema keyword."),
+        ] = False,
+    ) -> dict[str, Any]:
+        """Extract declared fields from an uploaded document.
+
+        Defaults to the offline provider, which sends nothing anywhere. That is the important
+        default over HTTP specifically: this endpoint accepts a file from whoever can reach the
+        port, and a default that forwarded it to a third party would turn one open port into a
+        data-exfiltration path. Reaching a real model requires asking for it by name.
+
+        The upload is written to a temporary file and deleted in a `finally`, so a document does
+        not outlive the request on disk. The response reports what was refused alongside what
+        was accepted -- a run that refused six fields is a successful run with a visible
+        boundary, and hiding the refusals would remove the only evidence the boundary works.
+
+        A provider failure is a 200 with `error` set, matching the degradation rule at the top
+        of this file: the record of what was sent is complete either way, and the caller gets
+        the redaction report even when the model never answered.
+        """
+        raw = file.file.read()
+        if not raw:
+            raise HTTPException(status_code=400, detail="uploaded file is empty")
+        if len(raw) > 20_000_000:
+            # A 40-page inspection PDF is a couple of megabytes. 20MB is generous room for a
+            # scan while still refusing to let one request make the container do a lot of
+            # unpaid work.
+            raise HTTPException(status_code=413, detail="file too large; 20MB limit")
+
+        suffix = pathlib.Path(file.filename or "upload.txt").suffix.lower() or ".txt"
+        if suffix not in {".txt", ".md", ".markdown", ".text", ".pdf"}:
+            raise HTTPException(
+                status_code=415,
+                detail=f"unsupported type {suffix!r}; send .txt, .md, or .pdf",
+            )
+
+        try:
+            engine = build_provider(provider)
+        except ProviderError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from None
+
+        handle = tempfile.NamedTemporaryFile(suffix=suffix, delete=False)
+        try:
+            handle.write(raw)
+            handle.close()
+            try:
+                run_result = extract_from_document(
+                    handle.name,
+                    provider=engine,
+                    known_names=tuple(name or ()),
+                    filter_pages=not all_pages,
+                )
+            except DocumentError as exc:
+                # A PDF that needs OCR, or a file that is not the type its name claims. The
+                # caller's problem, and the message says which.
+                raise HTTPException(status_code=422, detail=str(exc)) from None
+        finally:
+            pathlib.Path(handle.name).unlink(missing_ok=True)
+
+        payload = run_result.to_dict()
+        # The temp path is an implementation detail and leaks the container's filesystem
+        # layout; the caller knows what it uploaded.
+        payload["document"]["path"] = file.filename or "uploaded file"
+        return payload
+
+    @app.get("/extract/log", tags=["extraction"])
+    def extract_log(
+        limit: Annotated[int, Query(ge=1, le=1000)] = 50,
+    ) -> dict[str, Any]:
+        """The model call log: what was sent, when, to whom, and how much was refused.
+
+        Never contains document text or extracted values -- see the module docstring in
+        `analyzer/extract/calllog.py` for why a log that stored what it sent would be the
+        largest data-at-rest risk in the project.
+        """
+        records = read_records(limit=limit)
+        return {"count": len(records), "summary": summarize(records), "calls": records}
 
     @app.get("/ledger/journal", tags=["ledger"])
     def ledger_journal(

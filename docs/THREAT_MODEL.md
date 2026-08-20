@@ -51,12 +51,14 @@ Recorded here rather than quietly fixed, because an undocumented known issue is 
 
 ### Before anything reaches a language model
 
-Per [ADR 0004](adr/0004-llm-scope-boundary.md), models only extract from documents. Before a document is sent:
+Per [ADR 0004](adr/0004-llm-scope-boundary.md), models only extract from documents. **These controls are now implemented** in `analyzer/core/redact.py`, `analyzer/extract/`, and the refusal rules of [ADR 0014](adr/0014-extraction-is-refused-by-default-and-grounded-in-a-quote.md); what follows describes running code rather than intent. Before a document is sent:
 
-- **Redact** names, SSN-shaped strings, account numbers, phone numbers, and email addresses via deterministic pattern matching. Redaction happens in `core/`, is unit-tested, and cannot be skipped by a caller.
-- **Send only what's needed** — the relevant pages, not the whole file.
-- **Prefer a local model** where quality allows. A self-hosted model on the existing cluster means documents never leave the network at all.
-- **Log every call** — timestamp, document hash, fields requested, provider, and whether redaction fired. This doubles as the eval log.
+- **Redact** names, SSN-shaped strings, account numbers, phone numbers, and email addresses via deterministic pattern matching. Redaction happens in `core/`, is unit-tested, and cannot be skipped by a caller. The mechanism is a type, not a flag: `redact()` is the only constructor of `RedactedText`, and the send path accepts nothing else. A boolean would eventually be passed `False` by a call site in a hurry. A test fails if `redact()` ever grows a `skip=` parameter. Limits are documented — free-standing names are not detected, and long digit runs are over-redacted.
+- **Send only what's needed** — the relevant pages, not the whole file. Pages are selected by schema keyword. If the filter would drop every page it sends all of them instead, because a filter bug must not present itself as "the document contained nothing".
+- **Prefer a local model** where quality allows. A self-hosted model on the existing cluster means documents never leave the network at all. Stronger than a preference in practice: the default provider at every door is offline and deterministic, and reaching a hosted model requires naming it. This matters most at `POST /extract`, which accepts a file from anyone who can reach the port — a cloud default would make one exposed container an exfiltration path. API keys are read from `HBA_LLM_API_KEY` and never from a file in the repo.
+- **Log every call** — timestamp, document hash, fields requested, provider, and whether redaction fired. This doubles as the eval log; `python -m analyzer.extract.cli stats` reports the acceptance rate and which refusal rules fired, which is how a provider that has started fabricating becomes visible as a rise in `citation not found` rather than as wrong numbers in front of a buyer. The log deliberately stores **no document text and no extracted values** — field names and reason counts only. A log holding what it sent would be a second copy of the sensitive material with a longer retention than the request, making the audit trail the largest data-at-rest risk in the project. The hash is of the text **as sent**, post-redaction, so two runs redacting different names are distinguishable. A failed call is still logged. Writes fail silently rather than aborting an extraction (see `docs/KNOWN_LIMITATIONS.md`).
+
+Documents themselves are never persisted. An upload to `POST /extract` is written to a temporary file and deleted in a `finally`, so it does not outlive the request even if extraction raises.
 
 ### The ledger file
 

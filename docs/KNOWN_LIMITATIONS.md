@@ -434,6 +434,81 @@ The two amortization charts are rebuilt instead of updated, which re-reads the C
 and looks correct in both themes. The same fix would work on the other two and was not applied
 in this pass — noted rather than silently left as an inconsistency.
 
+## Extraction refuses a correct field if the model paraphrases the quote
+
+A field is accepted only if its quote appears in the text that was sent, after whitespace
+normalisation. A model that summarises instead of copying — "roof is around 18 years old" for a
+document saying "approximately 18 years old" — loses a field that was read correctly.
+
+This is the intended direction of failure. The check exists to catch a mostly-copied sentence
+with the number changed, and relaxing it to a similarity ratio would accept exactly that. The
+fix is prompting, not loosening the check. The refusal appears in the output and the call log as
+`citation not found`, so it is visible rather than silent.
+
+## Extraction returns one value per field, so nine listed defects become one
+
+The schema is one value per field. A deficiency summary listing nine items yields a single
+`defects` string, and the other eight are not reported at all — not even as a count.
+
+The offline provider prefers bulleted lines over narrative prose, which usually makes that one
+item the first real deficiency rather than a fragment of a sentence. It is still one of nine. A
+repeated-field schema would fix it and is not built; until then a document with a long defect
+list must be read by a person, and the extraction is a pointer to the section, not a substitute
+for it.
+
+## Redaction does not detect free-standing personal names
+
+Names are removed in three ways: any name supplied by the caller, a name following an honorific,
+and a name following a label like `Inspector:` or `Prepared for:`. A name appearing in ordinary
+prose with none of those cues is not detected.
+
+The reason is that a name detector good enough to catch "Brown" is also good enough to destroy
+"brown water staining below the window", and a redactor that quietly mangles the sentences a
+model has to read produces confidently wrong extractions. Since the tool's own use is a small
+set of known names, `--name` covers the real case. Anyone pointing this at documents about
+strangers should assume names survive.
+
+## Redaction removes long digit runs, including parcel and tax IDs written without separators
+
+Any run of eight or more bare digits is redacted as a possible account number. A parcel ID
+written `7-16-04-091.00` survives — the pattern refuses to cross a `.` or `-` for exactly that
+reason — but the same ID written as one unbroken string does not.
+
+Over-redaction was chosen over under-redaction here: a lost parcel number is a field the tool
+already reads from the county, and an account number reaching a third-party model is not
+recoverable.
+
+## The call log can silently fail to write
+
+`write_record()` swallows `OSError`. A full disk or a read-only `HBA_DATA_DIR` means the
+extraction still completes and the log line is simply missing.
+
+That is the deliberate trade — observability must not be able to break the thing it observes,
+and losing an extraction because an audit line could not be appended would be the worse outcome.
+The mitigation is that the CLI prints the log path on every run, so a log that has stopped
+growing is visible to anyone looking. It is not a substitute for a real audit guarantee, and this
+is not the design to use where one is required.
+
+## A confirmed finding cannot yet reach a score
+
+Every extracted field is `confidence=extracted` and `confirmed=false`, and `to_value()` raises
+until confirmed. Nothing stores a confirmation. There is no table, no endpoint, and no UI for it,
+so today extraction is a reading aid whose output a person retypes into the analyzer.
+
+Built in this order on purpose: the refusal machinery is enforced and tested before anything
+depends on its output.
+
+## The offline provider is pattern matching, not a model
+
+The default provider is about twenty regexes over common inspection-report phrasing. It exists so
+that grounding, coercion, bounds, forbidden fields, the log, and both doors are all testable with
+no key and no network, and so a fresh clone has a working demo.
+
+It will miss anything phrased unusually and it does not read PDFs any better than `pdftotext`
+does. It is not a small language model and does not behave like one. Reaching a real model is
+`--provider ollama` or `--provider openai`, and the acceptance rate in `extract stats` is the
+number to watch when comparing them.
+
 ## Not financial advice
 
 A personal decision-support tool. Every value is real and cited, and none of it is investment advice. Verify against a specific TMS or address, with a licensed inspector, lender, and insurer, before committing capital.

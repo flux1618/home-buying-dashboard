@@ -29,7 +29,10 @@ dev = ["pytest>=8.0", "httpx>=0.27"]   # httpx backs fastapi's TestClient
 include = ["analyzer*", "service*", "ledger*"]
 
 [tool.setuptools.package-data]
-analyzer = ["fixtures/*.json"]
+# The .txt is the sample inspection report the extractor's docs and tests point at. Left out
+# of an installed copy it would make `python -m analyzer.extract.cli read <sample>` -- the
+# first command in the extraction docs -- fail for anyone who installed rather than cloned.
+analyzer = ["fixtures/*.json", "fixtures/*.txt"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

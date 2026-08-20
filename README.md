@@ -154,6 +154,8 @@ This covers four reasonable criteria and will be useful for touring.
 
 Goal: Paste an inspection, HOA bylaws and seller disclosure -> structured JSON, important to keep AI from any math. 
 
+**Engine done** — `python -m analyzer.extract.cli read <file>` and `POST /extract` pull 16 declared fields out of an inspection report. Every field needs a quote that is actually in the text that was sent, or it is refused; dollar figures, scores, and verdicts are refused by name ([ADR 0014](docs/adr/0014-extraction-is-refused-by-default-and-grounded-in-a-quote.md)). Redaction runs in `core/` with no way to skip it, and the default provider is offline and deterministic, so nothing leaves the network unless you ask for a model by name. Every call is logged without storing the document or the values. Nothing is wired into a score yet — a confirmation step needs somewhere to save a confirmation.
+
 
 ### Phase 3 — ~~Saved-property backend~~ Done
 
