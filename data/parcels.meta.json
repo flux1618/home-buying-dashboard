@@ -1,7 +1,7 @@
 {
-  "content_sha256": "68168cee745cad04ab5a2a869def625dc5eaef92c4092b3d009fe2c44df65512",
+  "content_sha256": "85fa1178ce7e4f62a4aaba5787bf1405cabc1aea06f5973e7e15f1d7bbdbd9c8",
   "failed_pages": [],
-  "fetched_at": "2026-10-05T12:22:18.640491Z",
+  "fetched_at": "2026-10-06T12:05:30.145299Z",
   "field_list": [
     "tax_pin",
     "assessed_value",
