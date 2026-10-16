@@ -1,7 +1,7 @@
 {
-  "content_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+  "content_sha256": "3dbd52d1663209ded5bb79e437591936cde446dd7f1bb095fc40f3430fee4252",
   "failed_pages": [],
-  "fetched_at": "2026-10-15T10:03:03.282229Z",
+  "fetched_at": "2026-10-16T09:55:53.568399Z",
   "field_list": [
     "tax_pin",
     "assessed_value",
@@ -24,7 +24,7 @@
     "page_size": 1000,
     "supports_pagination": true
   },
-  "row_count": 0,
+  "row_count": 35498,
   "scope_note": "Spartanburg city residential parcels; not a county-wide archive.",
   "scope_where": "City = 'SPARTANBURG' AND LandUse LIKE 'RESIDENTIAL%'",
   "service_version": 11.5,
